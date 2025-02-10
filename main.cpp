@@ -3,6 +3,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <uv.h>
@@ -65,6 +66,8 @@ int main(int argc, char *argv[]) {
   // machine stores an array of remote connections and iterates over them when
   // sending outgoing messages, where as !localmachine stores exactly one
   // remote connection and only forwards messages to that connection
+  uv_loop_t *loop = (uv_loop_t *)malloc(sizeof(uv_loop_t));
+  uv_loop_init(loop);
 
   if (isLocalMachine) {
     // set up event listener that listens to new sockets in the TMP dir (
@@ -93,7 +96,10 @@ int main(int argc, char *argv[]) {
 
     // event listener that listens for interrupt signal
     // handler sends interrupt signal to all nvim instances, sends interrupt to
-    // all remote servers, and cleans up tmp directory
+    // all remote servers, and cleans up tmp directory, and stops uv
+
+    // start uv loop
+    uv_run(loop, UV_RUN_DEFAULT);
   }
   // main differnece is that !isLocalMachine does not forward interrupt signals
   // sent to it to other tcp connections and it does not iterate nvim messages
@@ -124,7 +130,10 @@ int main(int argc, char *argv[]) {
     // single one
 
     // event listener that listens for interrupt signal handler sends interrupt
-    // signal to all nvim instances, and cleans up tmp directory
+    // signal to all nvim instances, and cleans up tmp directory, and stops uv
+
+    // start uv loop
+    uv_run(loop, UV_RUN_DEFAULT);
   }
 
   // Psuedo logic
