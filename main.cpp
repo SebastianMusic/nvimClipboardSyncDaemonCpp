@@ -10,10 +10,20 @@
 // hopefully unique enough tmp directory
 #define TMP_DIR "/tmp/com.sebastianmusic.nvimclipboardsync"
 void createTmpDir() {
-
-  if (mkdir(TMP_DIR, 0700) != 0) {
-    perror("failed to create tmp directory");
-    exit(1);
+  struct stat st;
+  if (stat(TMP_DIR, &st) == 0) {
+    if (!S_ISDIR(st.st_mode)) {
+      std::cerr << "Error: " TMP_DIR
+                   " exists but is not a directory. Please remove it.\n";
+      exit(1);
+    }
+    std::cout << "Temporary directory already exists: " << TMP_DIR << std::endl;
+  } else {
+    if (mkdir(TMP_DIR, 0700) != 0) {
+      perror("Failed to create tmp directory");
+      exit(1);
+    }
+    std::cout << "Created temporary directory: " << TMP_DIR << std::endl;
   }
 }
 
@@ -55,9 +65,66 @@ int main(int argc, char *argv[]) {
   // machine stores an array of remote connections and iterates over them when
   // sending outgoing messages, where as !localmachine stores exactly one
   // remote connection and only forwards messages to that connection
+
   if (isLocalMachine) {
+    // set up event listener that listens to new sockets in the TMP dir (
+    // sockets are created by the nvim companion plugin and are named using
+    // uuid) handler that adds new sockets to a datastructure and starts reading
+    // them
+
+    // set up event listener that listens for the removal of sockets in the TMP
+    // dir handler that removes the removed socket form the data structure
+
+    // set up event listener that checks if nvim sockets are still used
+    // if socket is no longer associated with a process remove it
+
+    // set up event listener that listens for new tcp connections
+    // set up handler that adds new tcp connection fd to data structure
+
+    // set up event listener that listens for tcp disconnections
+    // set up handler that removes tcp connection fd from data structure
+
+    // set up event listener that listens to new data inside of any nvim sockets
+    // Handler for sending this message out to all connected tcp connections
+
+    // set up event listener that listens for new data from tcp connection
+    // iterates over nvim connection data structure and sends data to every
+    // single one
+
+    // event listener that listens for interrupt signal
+    // handler sends interrupt signal to all nvim instances, sends interrupt to
+    // all remote servers, and cleans up tmp directory
   }
+  // main differnece is that !isLocalMachine does not forward interrupt signals
+  // sent to it to other tcp connections and it does not iterate nvim messages
+  // to multiple tcp connections like isLocalMachine does
   if (!isLocalMachine) {
+    // set up event listener that listens to new sockets in the TMP dir (
+    // sockets are created by the nvim companion plugin and are named using
+    // uuid) handler that adds new sockets to a datastructure and starts reading
+    // them
+
+    // set up event listener that listens for the removal of sockets in the TMP
+    // dir handler that removes the removed socket form the data structure
+
+    // set up event listener that checks if nvim sockets are still used
+    // if socket is no longer associated with a process remove it
+
+    // set up event listener that listens for new tcp connections
+    // set up handler that adds new tcp connection fd to data structure
+
+    // set up event listener that listens for tcp disconnections
+    // set up handler that removes tcp connection fd from data structure
+
+    // set up event listener that listens to new data inside of any nvim sockets
+    // Handler for sending this message out to all connected tcp connections
+
+    // set up event listener that listens for new data from tcp connection
+    // iterates over nvim connection data structure and sends data to every
+    // single one
+
+    // event listener that listens for interrupt signal handler sends interrupt
+    // signal to all nvim instances, and cleans up tmp directory
   }
 
   // Psuedo logic
