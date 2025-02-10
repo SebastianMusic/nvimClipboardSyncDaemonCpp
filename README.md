@@ -19,6 +19,12 @@ Then you can ssh into remote machines with a reverse tunnel
 # machine, ergo your daemon
 ssh -R 2000:localhost:3000
 ```
+Then you will set up the port to which the remote machine will send its info and
+listen
+```bash
+# only specify port on the remote machine
+./daemon -p 2000
+```
 then you will simply start neovim and anything copied will be transfered to
 your remote machines clipboard and vice verca. 
 
