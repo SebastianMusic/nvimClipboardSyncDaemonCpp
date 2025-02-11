@@ -7,6 +7,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <uv.h>
+#include <vector>
+
+uv_loop_t *loop = (uv_loop_t *)malloc(sizeof(uv_loop_t));
 
 // hopefully unique enough tmp directory
 #define TMP_DIR "/tmp/com.sebastianmusic.nvimclipboardsync"
@@ -27,6 +30,101 @@ void createTmpDir() {
     std::cout << "Created temporary directory: " << TMP_DIR << std::endl;
   }
 }
+
+//  _   ___     _____ __  __   _____ ___
+// | \ | \ \   / /_ _|  \/  | |_   _/ _ \/
+// |  \| |\ \ / / | || |\/| |   | || | | |
+// | |\  | \ V /  | || |  | |   | || |_| |
+// |_| \_|  \_/  |___|_|  |_|   |_| \___/
+//
+//  ____    _    _____ __  __  ___  _   _
+// |  _ \  / \  | ____|  \/  |/ _ \| \ | |
+// | | | |/ _ \ |  _| | |\/| | | | |  \| |
+// | |_| / ___ \| |___| |  | | |_| | |\  |
+// |____/_/   \_\_____|_|  |_|\___/|_| \_|
+//
+
+// filesystem structs
+// Filesystem functions
+
+static void nvimMemoryAllocationCallback(uv_handle_t *handle,
+                                         size_t suggested_size, uv_buf_t *buf) {
+  buf->base = (char *)malloc(suggested_size);
+  buf->len = suggested_size;
+}
+
+void readFromNvim(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
+  // check if nread is less than 0 if it is then there is an error
+  if (nread < 0) {
+    // stop stream on error
+    uv_read_stop(stream);
+  }
+  // TODO: Implement function to pass buffer content along to connected daemon
+}
+
+void nvimConnectCallback(uv_connect_t *req, int status) {
+  if (status < 0) {
+    std::cout << "error occured in connection callback could not connect";
+    return;
+  }
+  uv_read_start(req->handle, nvimMemoryAllocationCallback, readFromNvim);
+}
+
+std::vector<std::string> connectedNvimClientsFds;
+void tmpDirectoryUpdateEventCallback(uv_fs_event_t *handle,
+                                     const char *filename, int events,
+                                     int status) {
+  // Might have to convert filename to type int?
+  if (filename != NULL) {
+    if (std::find(connectedNvimClientsFds.begin(),
+                  connectedNvimClientsFds.end(),
+                  filename) != connectedNvimClientsFds.end()) {
+      std::cout << "file descriptor for nvim domain socket already exists in "
+                   "vector\n";
+    } else {
+      connectedNvimClientsFds.push_back(filename);
+      // create a pipe type for the new unix domain socket
+      uv_pipe_t newSocket;
+      uv_pipe_init(loop, &newSocket, 1);
+      uv_connect_t connectionRequest;
+      uv_pipe_connect(&connectionRequest, &newSocket,
+                      (std::string(TMP_DIR) + filename).c_str(),
+                      nvimConnectCallback);
+    }
+  } else {
+    std::cout << "filename is null\n";
+  }
+}
+
+//  ____    _    _____ __  __  ___  _   _   _____ ___
+// |  _ \  / \  | ____|  \/  |/ _ \| \ | | |_   _/ _ \/
+// | | | |/ _ \ |  _| | |\/| | | | |  \| |   | || | | |
+// | |_| / ___ \| |___| |  | | |_| | |\  |   | || |_| |
+// |____/_/   \_\_____|_|  |_|\___/|_| \_|   |_| \___/
+//
+//  ____    _    _____ __  __  ___  _   _
+// |  _ \  / \  | ____|  \/  |/ _ \| \ | |
+// | | | |/ _ \ |  _| | |\/| | | | |  \| |
+// | |_| / ___ \| |___| |  | | |_| | |\  |
+// |____/_/   \_\_____|_|  |_|\___/|_| \_|
+//
+
+// We have to differentiate between Localmachine and !Localmachine as
+// Localmachine will connect to all !Localmachine but !Localmachine will only
+// connect to one Localmachine
+void setupListeningSocket() {
+  uv_tcp_t listeningSocket;
+  uv_tcp_init(loop, &listeningSocket);
+}
+
+// listening  function
+
+//  __  __    _    ___ _   _
+// |  \/  |  / \  |_ _| \ | |
+// | |\/| | / _ \  | ||  \| |
+// | |  | |/ ___ \ | || |\  |
+// |_|  |_/_/   \_\___|_| \_|
+//
 
 int main(int argc, char *argv[]) {
 
@@ -66,10 +164,15 @@ int main(int argc, char *argv[]) {
   // machine stores an array of remote connections and iterates over them when
   // sending outgoing messages, where as !localmachine stores exactly one
   // remote connection and only forwards messages to that connection
-  uv_loop_t *loop = (uv_loop_t *)malloc(sizeof(uv_loop_t));
   uv_loop_init(loop);
 
   if (isLocalMachine) {
+
+    uv_fs_event_t tmpDirectoryListener;
+    uv_fs_event_init(loop, &tmpDirectoryListener);
+    uv_fs_event_start(&tmpDirectoryListener, tmpDirectoryUpdateEventCallback,
+                      TMP_DIR, 0);
+
     // set up event listener that listens to new sockets in the TMP dir (
     // sockets are created by the nvim companion plugin and are named using
     // uuid) handler that adds new sockets to a datastructure and starts reading
