@@ -1,9 +1,11 @@
 #include <argparse/argparse.hpp>
 #include <cstdlib>
 #include <iostream>
+#include <netinet/in.h>
 #include <stdexcept>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <uv.h>
@@ -112,12 +114,53 @@ void tmpDirectoryUpdateEventCallback(uv_fs_event_t *handle,
 // We have to differentiate between Localmachine and !Localmachine as
 // Localmachine will connect to all !Localmachine but !Localmachine will only
 // connect to one Localmachine
-void setupListeningSocket() {
-  uv_tcp_t listeningSocket;
-  uv_tcp_init(loop, &listeningSocket);
+static void daemonMemoryAllocationCallback(uv_handle_t *handle,
+                                           size_t suggested_size,
+                                           uv_buf_t *buf) {
+  buf->base = (char *)malloc(suggested_size);
+  buf->len = suggested_size;
+}
+
+void daemonToDaemonReadCallback(uv_stream_t *stream, ssize_t nread,
+                                const uv_buf_t *buf) {
+  // check if nread is less than 0 if it is then there is an error
+  if (nread < 0) {
+    // stop stream on error
+    uv_read_stop(stream);
+  }
+  // TODO: Add function to pass read information to connected nvim clients
+}
+
+// Connection callback for daemon to daemon communication
+void daemonToDaemonConnectionCallback(uv_stream_t *server, int status) {
+  if (status < 0) {
+    std::cout << "Error in Daemon to Daemon connection callback";
+    return;
+  }
+  uv_tcp_t *clientHandle = new uv_tcp_t;
+  uv_tcp_init(loop, clientHandle);
+  if (uv_accept(server, (uv_stream_t *)clientHandle) == 0) {
+    std::cout << "Accepted new client connection\n";
+
+    uv_read_start((uv_stream_t *)clientHandle, daemonMemoryAllocationCallback,
+                  daemonToDaemonReadCallback);
+  }
 }
 
 // listening  function
+void setupListeningSocket(int port) {
+  struct sockaddr_in listeningSocketAdresse = {};
+  listeningSocketAdresse.sin_addr.s_addr = INADDR_ANY;
+  listeningSocketAdresse.sin_port = htons(port);
+  listeningSocketAdresse.sin_family = AF_INET;
+  uv_tcp_t listeningSocket;
+  uv_tcp_init(loop, &listeningSocket);
+  uv_tcp_bind(&listeningSocket,
+              // Set flag to 2 for SO_REUSEADDR
+              (const struct sockaddr *)&listeningSocketAdresse, 2);
+
+  uv_listen(&listeningSocket, 128, daemonToDaemonConnectionCallback);
+}
 
 //  __  __    _    ___ _   _
 // |  \/  |  / \  |_ _| \ | |
@@ -125,7 +168,6 @@ void setupListeningSocket() {
 // | |  | |/ ___ \ | || |\  |
 // |_|  |_/_/   \_\___|_| \_|
 //
-
 int main(int argc, char *argv[]) {
 
   argparse::ArgumentParser program("Nvim Clipboard sync");
