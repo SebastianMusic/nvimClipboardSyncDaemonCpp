@@ -1,5 +1,6 @@
 #include <argparse/argparse.hpp>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <netinet/in.h>
 #include <stdexcept>
@@ -7,10 +8,29 @@
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <toml++/toml.hpp>
 #include <unistd.h>
 #include <uv.h>
 #include <vector>
 
+/*   __________  _   __________________*/
+/*  / ____/ __ \/ | / / ____/  _/ ____/*/
+/* / /   / / / /  |/ / /_   / // / __  */
+/*/ /___/ /_/ / /|  / __/ _/ // /_/ /  */
+/*\____/\____/_/ |_/_/   /___/\____/   */
+/*                                     */
+
+void getConfigDir(const std::vector<std::string> configDirectories,
+                  std::string &configDir, int &error) {
+  for (const std::string path : configDirectories) {
+    if (std::filesystem::exists(path)) {
+      configDir = path;
+      error = 0;
+      return;
+    }
+  }
+  error = -1;
+}
 //    ________    ____  ____  ___    __
 //   / ____/ /   / __ \/ __ )/   |  / /
 //  / / __/ /   / / / / __  / /| | / /
@@ -174,11 +194,13 @@ void daemonToDaemonReadCallback(uv_stream_t *stream, ssize_t nread,
     // stop stream on error
     uv_read_stop(stream);
   }
-  // TODO: Add function to pass information to connected daemon
 
+  // if machine is localmachine send repeat information back to all connected
+  // daemons
   if (isLocalMachine == true) {
     iterateOverStreams(connectedDaemonHandles, buf, nread);
   }
+  // send to all connected neovim instances
   iterateOverStreams(connectedNvimClientsPipes, buf, nread);
 }
 
@@ -234,6 +256,35 @@ void setupListeningSocket(int port) {
 // |_|  |_/_/   \_\___|_| \_|
 //
 int main(int argc, char *argv[]) {
+
+  /*   __________  _   __________________*/
+  /*  / ____/ __ \/ | / / ____/  _/ ____/*/
+  /* / /   / / / /  |/ / /_   / // / __  */
+  /*/ /___/ /_/ / /|  / __/ _/ // /_/ /  */
+  /*\____/\____/_/ |_/_/   /___/\____/   */
+  /*                                     */
+  // TODO: Set up .config dir where clipboard command will be stored which works
+  // like "copy command {content to be copied}" examples "pbcopy", "wl-copy"
+  std::string home = getenv("HOME");
+  std::string xdg_config_home = home + "/.config/nvimClipboardSync/config.toml";
+  std::vector<std::string> configDirectories = {xdg_config_home};
+
+  std::string configPath;
+  int configError;
+
+  getConfigDir(configDirectories, configPath, configError);
+
+  auto config = toml::parse_file(configPath);
+
+  // TODO: set up better default value
+  std::string copyCmd = config["command"].value_or("wl_copy");
+
+  /*    ___    ____  __________  ___    ____  _____ ______*/
+  /*   /   |  / __ \/ ____/ __ \/   |  / __ \/ ___// ____/*/
+  /*  / /| | / /_/ / / __/ /_/ / /| | / /_/ /\__ \/ __/   */
+  /* / ___ |/ _, _/ /_/ / ____/ ___ |/ _, _/___/ / /___   */
+  /*/_/  |_/_/ |_|\____/_/   /_/  |_/_/ |_|/____/_____/   */
+  /*                                                      */
 
   argparse::ArgumentParser program("Nvim Clipboard sync");
 
