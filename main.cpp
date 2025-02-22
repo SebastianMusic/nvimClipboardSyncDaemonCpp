@@ -22,7 +22,7 @@
 
 void getConfigDir(const std::vector<std::string> configDirectories,
                   std::string &configDir, int &error) {
-  for (const std::string path : configDirectories) {
+  for (const std::string &path : configDirectories) {
     if (std::filesystem::exists(path)) {
       configDir = path;
       error = 0;
@@ -30,6 +30,21 @@ void getConfigDir(const std::vector<std::string> configDirectories,
     }
   }
   error = -1;
+}
+/*   __  ______________    ____________  __*/
+/*  / / / /_  __/  _/ /   /  _/_  __/\ \/ /*/
+/* / / / / / /  / // /    / /  / /    \  / */
+/*/ /_/ / / / _/ // /____/ /  / /     / /  */
+/*\____/ /_/ /___/_____/___/ /_/     /_/   */
+/*                                         */
+std::vector<std::string> getFilenamesInDirectory(const std::string &directory) {
+  std::vector<std::string> filenames;
+
+  for (const auto &entry : std::filesystem::directory_iterator(directory)) {
+
+    filenames.push_back(entry.path().filename().string());
+  }
+  return filenames;
 }
 //    ________    ____  ____  ___    __
 //   / ____/ /   / __ \/ __ )/   |  / /
@@ -43,7 +58,7 @@ bool isLocalMachine;
 std::vector<uv_stream_t *> connectedDaemonHandles;
 
 // hopefully unique enough tmp directory
-#define TMP_DIR "/tmp/com.sebastianmusic.nvimclipboardsync"
+#define TMP_DIR "/tmp/com.sebastianmusic.nvimclipboardsync/"
 void createTmpDir() {
   struct stat st;
   if (stat(TMP_DIR, &st) == 0) {
@@ -123,16 +138,21 @@ void nvimConnectCallback(uv_connect_t *req, int status) {
   }
   uv_read_start(req->handle, nvimMemoryAllocationCallback, readFromNvim);
 }
+typedef std::map<std::string, uv_stream_t *> PipenameToHandle;
 
+std::vector<PipenameToHandle> connectedNvimClientsPipesMap;
 std::vector<uv_stream_t *> connectedNvimClientsPipes;
 void tmpDirectoryUpdateEventCallback(uv_fs_event_t *handle,
                                      const char *filename, int events,
                                      int status) {
   // Might have to convert filename to type int?
   if (filename != NULL) {
-    if (std::find(connectedNvimClientsPipes.begin(),
-                  connectedNvimClientsPipes.end(),
-                  filename) != connectedNvimClientsPipes.end()) {
+    if (std::find_if(connectedNvimClientsPipesMap.begin(),
+                     connectedNvimClientsPipesMap.end(),
+                     [&](const PipenameToHandle &map) {
+                       return map.find(filename) != map.end();
+                     }) != connectedNvimClientsPipesMap.end()) {
+
       std::cout << "file descriptor for nvim domain socket already exists in "
                    "vector\n";
     } else {
@@ -143,10 +163,45 @@ void tmpDirectoryUpdateEventCallback(uv_fs_event_t *handle,
       uv_pipe_connect(&connectionRequest, &newSocket,
                       (std::string(TMP_DIR) + filename).c_str(),
                       nvimConnectCallback);
+
+      PipenameToHandle newMap;
+      newMap[filename] = ((uv_stream_t *)&newSocket);
+      connectedNvimClientsPipesMap.push_back(newMap);
       connectedNvimClientsPipes.push_back((uv_stream_t *)&newSocket);
     }
   } else {
     std::cout << "filename is null\n";
+  }
+}
+
+void cleanTmpDir() {
+  // first get all the pipe names in the directory add them to an array
+  std::vector<std::string> filenames = getFilenamesInDirectory(TMP_DIR);
+  // then create array to store files that need to be closed
+  std::vector<std::string> toBeRemoved;
+  // make a vector with all filenames from nvimconnectedpipes in correct order
+  // for easier lookup
+  std::vector<std::string> connectedNvimClientsNames;
+  for (int i = 0; i < connectedNvimClientsPipesMap.size(); i++) {
+    connectedNvimClientsNames.push_back(
+        connectedNvimClientsPipesMap[i].begin()->first);
+  }
+  // check if there are files in the nvimconnectedpipes vector
+  // which are not currently here
+  for (const auto filename : filenames) {
+    auto it = std::find(connectedNvimClientsNames.begin(),
+                        connectedNvimClientsNames.end(), filename);
+    // if it does not find the file
+    if (it == connectedNvimClientsNames.end()) {
+      toBeRemoved.push_back(filename);
+    }
+  }
+
+  // remove all files from to be removed
+  if (toBeRemoved.size() > 0) {
+    for (const auto filename : toBeRemoved) {
+      std::filesystem::remove(std::string(TMP_DIR) + filename);
+    }
   }
 }
 
@@ -201,15 +256,16 @@ void daemonToDaemonReadCallback(uv_stream_t *stream, ssize_t nread,
     iterateOverStreams(connectedDaemonHandles, buf, nread);
   }
   // send to all connected neovim instances
+
   iterateOverStreams(connectedNvimClientsPipes, buf, nread);
 }
 
-//     __                     __                     __    _
-//    / /   ____  _________ _/ /___ ___  ____ ______/ /_  (_)___  ___
-//   / /   / __ \/ ___/ __ `/ / __ `__ \/ __ `/ ___/ __ \/ / __ \/ _ \
-//  / /___/ /_/ / /__/ /_/ / / / / / / / /_/ / /__/ / / / / / / /  __/
-// /_____/\____/\___/\__,_/_/_/ /_/ /_/\__,_/\___/_/ /_/_/_/ /_/\___/
-//
+/*     __                     __                     __    _*/
+/*    / /   ____  _________ _/ /___ ___  ____ ______/ /_  (_)___  ___*/
+/*   / /   / __ \/ ___/ __ `/ / __ `__ \/ __ `/ ___/ __ \/ / __ \/ _ \*/
+/*  / /___/ /_/ / /__/ /_/ / / / / / / / /_/ / /__/ / / / / / / /  __/*/
+/* /_____/\____/\___/\__,_/_/_/ /_/ /_/\__,_/\___/_/ /_/_/_/ /_/\___/*/
+
 // Connection callback for daemon to daemon communication
 //
 void daemonToDaemonConnectionCallback(uv_stream_t *server, int status) {
@@ -263,8 +319,6 @@ int main(int argc, char *argv[]) {
   /*/ /___/ /_/ / /|  / __/ _/ // /_/ /  */
   /*\____/\____/_/ |_/_/   /___/\____/   */
   /*                                     */
-  // TODO: Set up .config dir where clipboard command will be stored which works
-  // like "copy command {content to be copied}" examples "pbcopy", "wl-copy"
   std::string home = getenv("HOME");
   std::string xdg_config_home = home + "/.config/nvimClipboardSync/config.toml";
   std::vector<std::string> configDirectories = {xdg_config_home};
@@ -276,8 +330,15 @@ int main(int argc, char *argv[]) {
 
   auto config = toml::parse_file(configPath);
 
-  // TODO: set up better default value
-  std::string copyCmd = config["command"].value_or("wl_copy");
+  std::optional<std::string> optCopyCmd =
+      config["copyCmd"].value<std::string>();
+
+  if (!optCopyCmd) {
+    std::cout << "Error in configuration file, missing clipboard command to "
+                 "use for copying to system clipboard";
+  }
+
+  std::string copyCmd = *optCopyCmd;
 
   /*    ___    ____  __________  ___    ____  _____ ______*/
   /*   /   |  / __ \/ ____/ __ \/   |  / __ \/ ___// ____/*/
@@ -324,28 +385,39 @@ int main(int argc, char *argv[]) {
   // remote connection and only forwards messages to that connection
   uv_loop_init(loop);
 
+  createTmpDir();
   if (isLocalMachine) {
-
-    uv_fs_event_t tmpDirectoryListener;
-    uv_fs_event_init(loop, &tmpDirectoryListener);
-    uv_fs_event_start(&tmpDirectoryListener, tmpDirectoryUpdateEventCallback,
-                      TMP_DIR, 0);
 
     // set up event listener that listens to new sockets in the TMP dir (
     // sockets are created by the nvim companion plugin and are named using
     // uuid) handler that adds new sockets to a datastructure and starts reading
     // them
-
+    uv_fs_event_t tmpDirectoryListener;
+    uv_fs_event_init(loop, &tmpDirectoryListener);
+    uv_fs_event_start(&tmpDirectoryListener, tmpDirectoryUpdateEventCallback,
+                      TMP_DIR, 0);
+    if (!optCopyCmd) {
+      std::cerr
+          << "Error: 'copyCmd' key missing or not a string in config file!"
+          << std::endl;
+      return 1;
+    }
     // set up event listener that listens for the removal of sockets in the TMP
-    // dir handler that removes the removed socket form the data structure
+
+    // dir handler that removes the removed socket from the data structure
 
     // set up event listener that checks if nvim sockets are still used
     // if socket is no longer associated with a process remove it
 
     // set up event listener that listens for new tcp connections
+
+    std::cout << "trying to set up listening port";
+    setupListeningSocket(port);
+
     // set up handler that adds new tcp connection fd to data structure
 
     // set up event listener that listens for tcp disconnections
+
     // set up handler that removes tcp connection fd from data structure
 
     // set up event listener that listens to new data inside of any nvim sockets
@@ -366,6 +438,7 @@ int main(int argc, char *argv[]) {
   // sent to it to other tcp connections and it does not iterate nvim messages
   // to multiple tcp connections like isLocalMachine does
   if (!isLocalMachine) {
+
     // set up event listener that listens to new sockets in the TMP dir (
     // sockets are created by the nvim companion plugin and are named using
     // uuid) handler that adds new sockets to a datastructure and starts reading
