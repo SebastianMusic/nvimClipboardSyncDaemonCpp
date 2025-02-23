@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <iostream>
 #include <netinet/in.h>
+#include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <stdio.h>
 #include <stdlib.h>
@@ -157,10 +158,10 @@ void tmpDirectoryUpdateEventCallback(uv_fs_event_t *handle,
                    "vector\n";
     } else {
       // create a pipe type for the new unix domain socket
-      uv_pipe_t newSocket;
-      uv_pipe_init(loop, &newSocket, 1);
-      uv_connect_t connectionRequest;
-      uv_pipe_connect(&connectionRequest, &newSocket,
+      uv_pipe_t *newSocket = new uv_pipe_t;
+      uv_pipe_init(loop, newSocket, 1);
+      uv_connect_t *connectionRequest = new uv_connect_t;
+      uv_pipe_connect(connectionRequest, newSocket,
                       (std::string(TMP_DIR) + filename).c_str(),
                       nvimConnectCallback);
 
@@ -269,6 +270,7 @@ void daemonToDaemonReadCallback(uv_stream_t *stream, ssize_t nread,
 // Connection callback for daemon to daemon communication
 //
 void daemonToDaemonConnectionCallback(uv_stream_t *server, int status) {
+  spdlog::info("Entering daemonToDaemonConnectionCallback");
   if (status < 0) {
     perror("Error in Daemon to Daemon connection callback");
     return;
@@ -285,24 +287,27 @@ void daemonToDaemonConnectionCallback(uv_stream_t *server, int status) {
     }
     connectedDaemonHandles.push_back((uv_stream_t *)clientHandle);
   }
+  spdlog::info("Leaving daemonToDaemonConnectionCallback");
 }
 
 // listening  function
 void setupListeningSocket(int port) {
+  spdlog::info("entered setupListeningSocket");
   struct sockaddr_in listeningSocketAdresse = {};
   listeningSocketAdresse.sin_addr.s_addr = INADDR_ANY;
   listeningSocketAdresse.sin_port = htons(port);
   listeningSocketAdresse.sin_family = AF_INET;
-  uv_tcp_t listeningSocket;
-  uv_tcp_init(loop, &listeningSocket);
-  uv_tcp_bind(&listeningSocket,
+  uv_tcp_t *listeningSocket = new uv_tcp_t;
+  uv_tcp_init(loop, listeningSocket);
+  uv_tcp_bind(listeningSocket,
               // Set flag to 2 for SO_REUSEADDR
               (const struct sockaddr *)&listeningSocketAdresse, 2);
 
-  if (uv_listen((uv_stream_t *)&listeningSocket, 128,
+  if (uv_listen((uv_stream_t *)listeningSocket, 128,
                 daemonToDaemonConnectionCallback) != 0) {
     perror("Error in uv_listen: ");
   }
+  spdlog::info("leaving setupListeningSocket");
 }
 
 //  __  __    _    ___ _   _
@@ -386,16 +391,23 @@ int main(int argc, char *argv[]) {
   uv_loop_init(loop);
 
   createTmpDir();
+
   if (isLocalMachine) {
+    spdlog::info("Entered isLocalMachine");
 
     // set up event listener that listens to new sockets in the TMP dir (
     // sockets are created by the nvim companion plugin and are named using
     // uuid) handler that adds new sockets to a datastructure and starts reading
     // them
     uv_fs_event_t tmpDirectoryListener;
+    spdlog::info("trying to set up init filesystem event listener");
     uv_fs_event_init(loop, &tmpDirectoryListener);
+    spdlog::info("succesfully initialized filesystem event listener");
+    spdlog::info("trying to start filesystem eventlistener");
     uv_fs_event_start(&tmpDirectoryListener, tmpDirectoryUpdateEventCallback,
                       TMP_DIR, 0);
+    spdlog::info("succesfully started filesystem event listener");
+
     if (!optCopyCmd) {
       std::cerr
           << "Error: 'copyCmd' key missing or not a string in config file!"
@@ -411,8 +423,9 @@ int main(int argc, char *argv[]) {
 
     // set up event listener that listens for new tcp connections
 
-    std::cout << "trying to set up listening port";
+    spdlog::info("trying to setup listening socket");
     setupListeningSocket(port);
+    spdlog::info("succesfully setup listening socket");
 
     // set up handler that adds new tcp connection fd to data structure
 
@@ -432,7 +445,9 @@ int main(int argc, char *argv[]) {
     // all remote servers, and cleans up tmp directory, and stops uv
 
     // start uv loop
+    spdlog::info("trying to run uv_run()");
     uv_run(loop, UV_RUN_DEFAULT);
+    spdlog::info("succesfully ran uv_run()");
   }
   // main differnece is that !isLocalMachine does not forward interrupt signals
   // sent to it to other tcp connections and it does not iterate nvim messages
