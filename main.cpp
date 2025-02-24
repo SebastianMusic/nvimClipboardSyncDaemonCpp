@@ -53,7 +53,8 @@ std::vector<std::string> getFilenamesInDirectory(const std::string &directory) {
 // / /_/ / /___/ /_/ / /_/ / ___ |/ /___
 // \____/_____/\____/_____/_/  |_/_____/
 //
-
+//
+uv_stream_t *GLOBAL_LOCAL_HANDLE = new uv_stream_t;
 uv_loop_t *loop = (uv_loop_t *)malloc(sizeof(uv_loop_t));
 bool isLocalMachine;
 std::vector<uv_stream_t *> connectedDaemonHandles;
@@ -268,7 +269,28 @@ void daemonToDaemonReadCallback(uv_stream_t *stream, ssize_t nread,
 /* /_____/\____/\___/\__,_/_/_/ /_/ /_/\__,_/\___/_/ /_/_/_/ /_/\___/*/
 
 // Connection callback for daemon to daemon communication
+void remoteDameonToLocalDaemonConnectionCallback(uv_connect_t *req,
+                                                 int status) {
+  spdlog::info("entered remoteDaemonToLocalDaemonConnectionCallback");
+  if (status != 0) {
+    perror("Error in remoteDaemonToLocalDaemonConnectionCallback: ");
+    spdlog::error("Error in remoteDaemonToLocalDaemonConnectionCallback");
+    return;
+  }
+
+  spdlog::info("req->handle type is: ", typeid(req->handle).name());
+
+  uv_stream_t *localHandle = new uv_stream_t;
+  GLOBAL_LOCAL_HANDLE = localHandle;
+  localHandle = req->handle;
+  uv_read_start(localHandle, daemonMemoryAllocationCallback,
+                daemonToDaemonReadCallback);
+}
+
 //
+//
+//
+
 void daemonToDaemonConnectionCallback(uv_stream_t *server, int status) {
   spdlog::info("Entering daemonToDaemonConnectionCallback");
   if (status < 0) {
@@ -453,6 +475,7 @@ int main(int argc, char *argv[]) {
   // sent to it to other tcp connections and it does not iterate nvim messages
   // to multiple tcp connections like isLocalMachine does
   if (!isLocalMachine) {
+    spdlog::info("entered remote machine");
 
     // set up event listener that listens to new sockets in the TMP dir (
     // sockets are created by the nvim companion plugin and are named using
@@ -481,8 +504,24 @@ int main(int argc, char *argv[]) {
     // event listener that listens for interrupt signal handler sends interrupt
     // signal to all nvim instances, and cleans up tmp directory, and stops uv
 
+    // attempt to connect to local daemon
+
+    struct sockaddr_in addr;
+    addr.sin_port = htons(port);
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+
+    uv_connect_t *req = new uv_connect_t;
+    uv_tcp_t *localConnectHandle = new uv_tcp_t;
+    uv_tcp_init(loop, localConnectHandle);
+
+    uv_tcp_connect(req, localConnectHandle, (const struct sockaddr *)&addr,
+                   remoteDameonToLocalDaemonConnectionCallback);
+
     // start uv loop
+    spdlog::info("trying to run uv_run()");
     uv_run(loop, UV_RUN_DEFAULT);
+    spdlog::info("succesfully ran uv_run()");
   }
 
   // Psuedo logic
