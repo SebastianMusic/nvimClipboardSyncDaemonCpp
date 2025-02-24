@@ -1,3 +1,6 @@
+// TODO: Maybe not have a config file on remote machine since we dont need to
+// sync clipboards there or atleast have an option to turn clipboard syncing off
+
 #include <argparse/argparse.hpp>
 #include <cstdlib>
 #include <filesystem>
@@ -81,6 +84,13 @@ void createTmpDir() {
 
 void iterateOverStreams(std::vector<uv_stream_t *> vectorToIterateOver,
                         const uv_buf_t *buf, ssize_t nread) {
+  spdlog::info("entered iterateOverStreams");
+  if (buf != NULL) {
+    spdlog::info("buffer is {}", std::string(buf->base, buf->len));
+  } else {
+    spdlog::info("buffer is empty");
+  }
+
   for (uv_stream_t *handle : vectorToIterateOver) {
 
     uv_write_t *writeRequest = new uv_write_t();
@@ -300,7 +310,7 @@ void daemonToDaemonConnectionCallback(uv_stream_t *server, int status) {
   uv_tcp_t *clientHandle = new uv_tcp_t;
   uv_tcp_init(loop, clientHandle);
   if (uv_accept(server, (uv_stream_t *)clientHandle) == 0) {
-    std::cout << "Accepted new client connection\n";
+    spdlog::info("Accepted new client connection");
 
     if (uv_read_start((uv_stream_t *)clientHandle,
                       daemonMemoryAllocationCallback,
