@@ -1,5 +1,7 @@
 // TODO: Maybe not have a config file on remote machine since we dont need to
 // sync clipboards there or atleast have an option to turn clipboard syncing off
+//
+// NOTE: Jeg har sett probelmet feil
 
 #include <argparse/argparse.hpp>
 #include <cstdlib>
@@ -61,6 +63,7 @@ uv_stream_t *GLOBAL_LOCAL_HANDLE = new uv_stream_t;
 uv_loop_t *loop = (uv_loop_t *)malloc(sizeof(uv_loop_t));
 bool isLocalMachine;
 std::vector<uv_stream_t *> connectedDaemonHandles;
+std::vector<uv_stream_t *> connectedNvimHandles;
 
 // hopefully unique enough tmp directory
 #define TMP_DIR "/tmp/com.sebastianmusic.nvimclipboardsync/"
@@ -150,10 +153,36 @@ void nvimConnectCallback(uv_connect_t *req, int status) {
   }
   uv_read_start(req->handle, nvimMemoryAllocationCallback, readFromNvim);
 }
+
 typedef std::map<std::string, uv_stream_t *> PipenameToHandle;
 
 std::vector<PipenameToHandle> connectedNvimClientsPipesMap;
 std::vector<uv_stream_t *> connectedNvimClientsPipes;
+void daemonToNvimConnectionCallback(uv_stream_t *server, int status) {
+  spdlog::info("entered daemonToNvimConnectionCallback");
+  if (status < 0) {
+    std::cout << "error occured in connection callback could not connect";
+    return;
+  }
+  uv_pipe_t *nvimClient = new uv_pipe_t;
+  uv_pipe_init(loop, nvimClient, 0);
+
+  if (uv_accept(server, (uv_stream_t *)nvimClient) == 0) {
+    spdlog::info("Accepted new client connection");
+
+    if (uv_read_start((uv_stream_t *)nvimClient, nvimMemoryAllocationCallback,
+                      readFromNvim) != 0) {
+      perror("error reading from neovim client");
+      spdlog::error("could not read from neovim client RETURNING");
+      return;
+    }
+
+    connectedNvimHandles.push_back((uv_stream_t *)nvimClient);
+  }
+
+  spdlog::info("Leaving daemonToNvimConnectionCallback");
+}
+
 void tmpDirectoryUpdateEventCallback(uv_fs_event_t *handle,
                                      const char *filename, int events,
                                      int status) {
@@ -342,6 +371,19 @@ void setupListeningSocket(int port) {
   spdlog::info("leaving setupListeningSocket");
 }
 
+void setupListeningPipe() {
+  spdlog::info("entered setupListeningPipe");
+  uv_pipe_t *listeningPipe = new uv_pipe_t;
+  uv_pipe_init(loop, listeningPipe, 0);
+  std::string path = std::string(TMP_DIR) + "listeningPipe";
+  uv_pipe_bind(listeningPipe, path.c_str());
+  if (uv_listen((uv_stream_t *)listeningPipe, 128,
+                daemonToNvimConnectionCallback) != 0) {
+    perror("Error in uv_listen: ");
+  }
+  spdlog::info("Leaving setupListeningPipe");
+}
+
 //  __  __    _    ___ _   _
 // |  \/  |  / \  |_ _| \ | |
 // | |\/| | / _ \  | ||  \| |
@@ -459,6 +501,10 @@ int main(int argc, char *argv[]) {
     setupListeningSocket(port);
     spdlog::info("succesfully setup listening socket");
 
+    spdlog::info("trying to setup listening pipe");
+    setupListeningPipe();
+    spdlog::info("succesfully setup listening pipe");
+
     // set up handler that adds new tcp connection fd to data structure
 
     // set up event listener that listens for tcp disconnections
@@ -491,6 +537,9 @@ int main(int argc, char *argv[]) {
     // sockets are created by the nvim companion plugin and are named using
     // uuid) handler that adds new sockets to a datastructure and starts reading
     // them
+    spdlog::info("trying to setup listening pipe");
+    setupListeningPipe();
+    spdlog::info("succesfully setup listening pipe");
 
     // set up event listener that listens for the removal of sockets in the TMP
     // dir handler that removes the removed socket form the data structure
