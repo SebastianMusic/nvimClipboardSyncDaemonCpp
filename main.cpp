@@ -3,8 +3,12 @@
 //
 // NOTE: Jeg har sett probelmet feil
 
+#include "includeAllRapidJson.h"
+#include "rapidjson/document.h"
 #include <argparse/argparse.hpp>
+#include <cassert>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <netinet/in.h>
@@ -64,6 +68,8 @@ uv_loop_t *loop = (uv_loop_t *)malloc(sizeof(uv_loop_t));
 bool isLocalMachine;
 std::vector<uv_stream_t *> connectedDaemonHandles;
 std::vector<uv_stream_t *> connectedNvimHandles;
+std::string copyCmd;
+int TIMESTAMP;
 
 // hopefully unique enough tmp directory
 #define TMP_DIR "/tmp/com.sebastianmusic.nvimclipboardsync/"
@@ -157,7 +163,7 @@ void nvimConnectCallback(uv_connect_t *req, int status) {
 typedef std::map<std::string, uv_stream_t *> PipenameToHandle;
 
 std::vector<PipenameToHandle> connectedNvimClientsPipesMap;
-std::vector<uv_stream_t *> connectedNvimClientsPipes;
+std::vector<uv_stream_t *> connectedNvimClientsPipesDeprecated;
 void daemonToNvimConnectionCallback(uv_stream_t *server, int status) {
   spdlog::info("entered daemonToNvimConnectionCallback");
   if (status < 0) {
@@ -208,7 +214,7 @@ void tmpDirectoryUpdateEventCallback(uv_fs_event_t *handle,
       PipenameToHandle newMap;
       newMap[filename] = ((uv_stream_t *)&newSocket);
       connectedNvimClientsPipesMap.push_back(newMap);
-      connectedNvimClientsPipes.push_back((uv_stream_t *)&newSocket);
+      connectedNvimClientsPipesDeprecated.push_back((uv_stream_t *)&newSocket);
     }
   } else {
     std::cout << "filename is null\n";
@@ -279,8 +285,44 @@ void daemonToDaemonWriteCallback(uv_write_t *req, int status) {
   }
 }
 
+void copyToSystemClipboard(std::string copyCmd, const uv_buf_t *buf,
+                           ssize_t nread) {
+  spdlog::info("entered copyToSystemClipboard");
+  std::string json = std::string(buf->base, buf->len);
+  spdlog::info("json is {}", json);
+
+  rapidjson::Document doc;
+  doc.Parse(json.c_str());
+  assert(doc.HasMember("TIMESTAMP"));
+  assert(doc.HasMember("REGISTER"));
+  int tmpTIMESTAMP = doc["TIMESTAMP"].GetInt();
+  // if the new timestamp is newer than the current one then copy it into the
+  // clipboard if not then discard it
+  if (tmpTIMESTAMP > TIMESTAMP) {
+    std::string REGISTER = doc["REGISTER"].GetString();
+    // open the clipboard command as an external proccess in writing mode
+    // safer than shell execution
+    FILE *copyProcess = popen(copyCmd.c_str(), "w");
+    if (!copyProcess) {
+      spdlog::error("Failed to open clipboard process");
+      return;
+    }
+    fwrite(REGISTER.c_str(), sizeof(char), REGISTER.length(), copyProcess);
+    fflush(copyProcess); // Ensure data is written
+    pclose(copyProcess); // Close process safely
+
+    TIMESTAMP = tmpTIMESTAMP;
+  }
+
+  spdlog::info("Leaving copyToSystemClipboard");
+}
+
 // This function sends read data to all nvim clients, if it is localMachine it
 // also sends it to every connected daemon
+
+// TODO: Make copies of incomming buffer so its not used up by the first
+// function  but rather sent to all different functions
+// WARN: MAYBE IT IS NOT A ISSUE???? I NEED TO CHECK OTHER THINGS FIRST
 void daemonToDaemonReadCallback(uv_stream_t *stream, ssize_t nread,
 
                                 const uv_buf_t *buf) {
@@ -293,12 +335,14 @@ void daemonToDaemonReadCallback(uv_stream_t *stream, ssize_t nread,
 
   // if machine is localmachine send repeat information back to all connected
   // daemons
+  spdlog::info("isLocalMachine is: ", isLocalMachine);
   if (isLocalMachine == true) {
     iterateOverStreams(connectedDaemonHandles, buf, nread);
+    copyToSystemClipboard(copyCmd, buf, nread);
   }
   // send to all connected neovim instances
 
-  iterateOverStreams(connectedNvimClientsPipes, buf, nread);
+  iterateOverStreams(connectedNvimHandles, buf, nread);
 }
 
 /*     __                     __                     __    _*/
@@ -324,6 +368,9 @@ void remoteDameonToLocalDaemonConnectionCallback(uv_connect_t *req,
   localHandle = req->handle;
   uv_read_start(localHandle, daemonMemoryAllocationCallback,
                 daemonToDaemonReadCallback);
+
+  connectedDaemonHandles.push_back((uv_stream_t *)localHandle);
+  spdlog::info("Leaving remoteDaemonToLocalDaemonConnectionCallback");
 }
 
 //
@@ -372,10 +419,16 @@ void setupListeningSocket(int port) {
 }
 
 void setupListeningPipe() {
+  std::filesystem::path path = std::string(TMP_DIR) + "listeningPipe";
+
   spdlog::info("entered setupListeningPipe");
+  if (std::filesystem::exists(path)) {
+    spdlog::info("listeningPipe already exists, removing it");
+    std::filesystem::remove(path);
+  }
+
   uv_pipe_t *listeningPipe = new uv_pipe_t;
   uv_pipe_init(loop, listeningPipe, 0);
-  std::string path = std::string(TMP_DIR) + "listeningPipe";
   uv_pipe_bind(listeningPipe, path.c_str());
   if (uv_listen((uv_stream_t *)listeningPipe, 128,
                 daemonToNvimConnectionCallback) != 0) {
@@ -448,7 +501,7 @@ int main(int argc, char *argv[]) {
   }
 
   int port = program.get<int>("-p");
-  bool isLocalMachine = program["--isLocalMachine"] == true;
+  isLocalMachine = program["--isLocalMachine"] == true;
   printf("port is %d\n", port);
   if (isLocalMachine == true) {
     printf("Running on local machine\n");
