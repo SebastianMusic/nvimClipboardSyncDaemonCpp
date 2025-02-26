@@ -5,6 +5,7 @@
 
 #include "includeAllRapidJson.h"
 #include "rapidjson/document.h"
+#include "rapidjson/error/en.h"
 #include <argparse/argparse.hpp>
 #include <cassert>
 #include <cstdlib>
@@ -81,13 +82,13 @@ void createTmpDir() {
                    " exists but is not a directory. Please remove it.\n";
       exit(1);
     }
-    std::cout << "Temporary directory already exists: " << TMP_DIR << std::endl;
+    spdlog::info("Temporary directory already exists: {}", TMP_DIR);
   } else {
     if (mkdir(TMP_DIR, 0700) != 0) {
       perror("Failed to create tmp directory");
       exit(1);
     }
-    std::cout << "Created temporary directory: " << TMP_DIR << std::endl;
+    spdlog::info("Created Temporary directory: {}", TMP_DIR);
   }
 }
 
@@ -154,7 +155,7 @@ void readFromNvim(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
 
 void nvimConnectCallback(uv_connect_t *req, int status) {
   if (status < 0) {
-    std::cout << "error occured in connection callback could not connect";
+    spdlog::error("error occured in connection callback could not connect");
     return;
   }
   uv_read_start(req->handle, nvimMemoryAllocationCallback, readFromNvim);
@@ -167,7 +168,8 @@ std::vector<uv_stream_t *> connectedNvimClientsPipesDeprecated;
 void daemonToNvimConnectionCallback(uv_stream_t *server, int status) {
   spdlog::info("entered daemonToNvimConnectionCallback");
   if (status < 0) {
-    std::cout << "error occured in connection callback could not connect";
+    spdlog::error(
+        "error occured in daemonToNvimConnectionCallback could not connect");
     return;
   }
   uv_pipe_t *nvimClient = new uv_pipe_t;
@@ -200,8 +202,7 @@ void tmpDirectoryUpdateEventCallback(uv_fs_event_t *handle,
                        return map.find(filename) != map.end();
                      }) != connectedNvimClientsPipesMap.end()) {
 
-      std::cout << "file descriptor for nvim domain socket already exists in "
-                   "vector\n";
+      spdlog::warn("file descriptor for nvim domain socket already exists in");
     } else {
       // create a pipe type for the new unix domain socket
       uv_pipe_t *newSocket = new uv_pipe_t;
@@ -217,7 +218,7 @@ void tmpDirectoryUpdateEventCallback(uv_fs_event_t *handle,
       connectedNvimClientsPipesDeprecated.push_back((uv_stream_t *)&newSocket);
     }
   } else {
-    std::cout << "filename is null\n";
+    spdlog::error("filename is null");
   }
 }
 
@@ -281,7 +282,7 @@ void daemonToDaemonWriteCallback(uv_write_t *req, int status) {
     perror("error in daemonToDaemonWriteCallback");
     return;
   } else {
-    std::cout << "written to daemon correctly";
+    spdlog::info("written memory to daemon correctly");
   }
 }
 
@@ -289,19 +290,50 @@ void copyToSystemClipboard(std::string copyCmd, const uv_buf_t *buf,
                            ssize_t nread) {
   spdlog::info("entered copyToSystemClipboard");
   std::string json = std::string(buf->base, buf->len);
+  spdlog::info("bytes read: {}", nread);
+  spdlog::info("json is below");
   spdlog::info("json is {}", json);
+  spdlog::info("json is above");
+  // todo free it afterwards
+  char *jsonStr = new char[nread + 1];
+  memcpy(jsonStr, buf->base, nread);
+  jsonStr[nread] = '\0';
+  spdlog::info("jsonStr is {}", jsonStr);
 
   rapidjson::Document doc;
-  doc.Parse(json.c_str());
+
+  doc.Parse(jsonStr);
+  if (doc.HasParseError()) {
+    spdlog::error("JSON parse error: {}",
+                  rapidjson::GetParseError_En(doc.GetParseError()));
+  }
+  spdlog::info("attempting assertions in copyToSystemCLipboard");
+  spdlog::info("attemting to assert odc.IsObject");
+  doc.IsObject();
+  spdlog::info("succsefully asserted odc.IsObject");
+  spdlog::info("attempting to assert HasMember(TIMESTAMP)");
   assert(doc.HasMember("TIMESTAMP"));
+  spdlog::info("succsefully asserted HasMember(TIMESTAMP)");
+  spdlog::info("attempting to assert (TIMESTAMP).IsInt()");
+  assert(doc["TIMESTAMP"].IsInt());
+  spdlog::info("Sucseffully asserted (TIMESTAMP).IsInt()");
+  spdlog::info("attempting to assert HasMember(REGISTER)");
   assert(doc.HasMember("REGISTER"));
+  spdlog::info("succsefully asserted HasMember(REGISTER)");
+  spdlog::info("attempting to assert (Register).IsString()");
+  assert(doc["REGISTER"].IsString());
+  spdlog::info("succsesfully asserted (Register).IsString()");
+  spdlog::info("succsessfully asserted everything in copyToSystemClipboard");
+
   int tmpTIMESTAMP = doc["TIMESTAMP"].GetInt();
   // if the new timestamp is newer than the current one then copy it into the
   // clipboard if not then discard it
   if (tmpTIMESTAMP > TIMESTAMP) {
+    spdlog::info("timestamp is newer, updating clipboard");
     std::string REGISTER = doc["REGISTER"].GetString();
     // open the clipboard command as an external proccess in writing mode
     // safer than shell execution
+    spdlog::info("copy command to try is {}", copyCmd);
     FILE *copyProcess = popen(copyCmd.c_str(), "w");
     if (!copyProcess) {
       spdlog::error("Failed to open clipboard process");
@@ -312,8 +344,11 @@ void copyToSystemClipboard(std::string copyCmd, const uv_buf_t *buf,
     pclose(copyProcess); // Close process safely
 
     TIMESTAMP = tmpTIMESTAMP;
+  } else {
+    spdlog::warn("timestamp is NOT newer, NOT updating clipboard");
   }
 
+  delete[] jsonStr;
   spdlog::info("Leaving copyToSystemClipboard");
 }
 
@@ -324,7 +359,6 @@ void copyToSystemClipboard(std::string copyCmd, const uv_buf_t *buf,
 // function  but rather sent to all different functions
 // WARN: MAYBE IT IS NOT A ISSUE???? I NEED TO CHECK OTHER THINGS FIRST
 void daemonToDaemonReadCallback(uv_stream_t *stream, ssize_t nread,
-
                                 const uv_buf_t *buf) {
 
   // check if nread is less than 0 if it is then there is an error
@@ -335,7 +369,7 @@ void daemonToDaemonReadCallback(uv_stream_t *stream, ssize_t nread,
 
   // if machine is localmachine send repeat information back to all connected
   // daemons
-  spdlog::info("isLocalMachine is: ", isLocalMachine);
+  spdlog::info("isLocalMachine is: {}", isLocalMachine);
   if (isLocalMachine == true) {
     iterateOverStreams(connectedDaemonHandles, buf, nread);
     copyToSystemClipboard(copyCmd, buf, nread);
@@ -466,11 +500,11 @@ int main(int argc, char *argv[]) {
       config["copyCmd"].value<std::string>();
 
   if (!optCopyCmd) {
-    std::cout << "Error in configuration file, missing clipboard command to "
-                 "use for copying to system clipboard";
+    spdlog::info("Error in configuration file, missing clipboard command to "
+                 "use for copying to system clipboard");
   }
 
-  std::string copyCmd = *optCopyCmd;
+  copyCmd = *optCopyCmd;
 
   /*    ___    ____  __________  ___    ____  _____ ______*/
   /*   /   |  / __ \/ ____/ __ \/   |  / __ \/ ___// ____/*/
@@ -496,17 +530,17 @@ int main(int argc, char *argv[]) {
   try {
     program.parse_args(argc, argv);
   } catch (const std::runtime_error &err) {
-    std::cerr << "Error: " << err.what() << std::endl;
+    spdlog::error("Error: {}", err.what());
     return 1;
   }
 
   int port = program.get<int>("-p");
   isLocalMachine = program["--isLocalMachine"] == true;
-  printf("port is %d\n", port);
+  spdlog::info("port is {}", port);
   if (isLocalMachine == true) {
-    printf("Running on local machine\n");
+    spdlog::info("Running on local machine\n");
   } else {
-    printf("Running on remote machine\n");
+    spdlog::info("Running on remote machine\n");
   }
 
   // Set up tmp directory for local nvim communication
