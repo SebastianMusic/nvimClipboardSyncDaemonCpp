@@ -93,10 +93,11 @@ void createTmpDir() {
 }
 
 void iterateOverStreams(std::vector<uv_stream_t *> vectorToIterateOver,
-                        const uv_buf_t *buf, ssize_t nread) {
+                        char *buf, ssize_t nread) {
+
   spdlog::info("entered iterateOverStreams");
   if (buf != NULL) {
-    spdlog::info("buffer is {}", std::string(buf->base, buf->len));
+    spdlog::info("buffer is {}", std::string(buf));
   } else {
     spdlog::info("buffer is empty");
   }
@@ -104,7 +105,7 @@ void iterateOverStreams(std::vector<uv_stream_t *> vectorToIterateOver,
   for (uv_stream_t *handle : vectorToIterateOver) {
 
     uv_write_t *writeRequest = new uv_write_t();
-    uv_buf_t bufs = uv_buf_init(buf->base, nread);
+    uv_buf_t bufs = uv_buf_init(buf, nread);
 
     int result = uv_write(
         writeRequest, handle, &bufs, 1, [](uv_write_t *req, int status) {
@@ -150,7 +151,14 @@ void readFromNvim(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
     // stop stream on error
     uv_read_stop(stream);
   }
-  iterateOverStreams(connectedDaemonHandles, buf, nread);
+  char *buffer = new char[nread + 1];
+  memcpy(buffer, buf->base, nread);
+  buffer[nread] = '\0';
+  spdlog::info("uv_buf_t in readFromNvim {}", std::string(buf->base, buf->len));
+
+  spdlog::info("char buffer in readFromNvim {}", buffer);
+  iterateOverStreams(connectedDaemonHandles, buffer, nread);
+  delete[] buffer;
 }
 
 void nvimConnectCallback(uv_connect_t *req, int status) {
@@ -286,23 +294,17 @@ void daemonToDaemonWriteCallback(uv_write_t *req, int status) {
   }
 }
 
-void copyToSystemClipboard(std::string copyCmd, const uv_buf_t *buf,
-                           ssize_t nread) {
+void copyToSystemClipboard(std::string copyCmd, char *buf, ssize_t nread) {
   spdlog::info("entered copyToSystemClipboard");
-  std::string json = std::string(buf->base, buf->len);
   spdlog::info("bytes read: {}", nread);
   spdlog::info("json is below");
-  spdlog::info("json is {}", json);
+  spdlog::info("json is {}", buf);
   spdlog::info("json is above");
-  // todo free it afterwards
-  char *jsonStr = new char[nread + 1];
-  memcpy(jsonStr, buf->base, nread);
-  jsonStr[nread] = '\0';
-  spdlog::info("jsonStr is {}", jsonStr);
+  spdlog::info("jsonStr is {}", buf);
 
   rapidjson::Document doc;
 
-  doc.Parse(jsonStr);
+  doc.Parse(buf);
   if (doc.HasParseError()) {
     spdlog::error("JSON parse error: {}",
                   rapidjson::GetParseError_En(doc.GetParseError()));
@@ -348,7 +350,6 @@ void copyToSystemClipboard(std::string copyCmd, const uv_buf_t *buf,
     spdlog::warn("timestamp is NOT newer, NOT updating clipboard");
   }
 
-  delete[] jsonStr;
   spdlog::info("Leaving copyToSystemClipboard");
 }
 
@@ -360,23 +361,37 @@ void copyToSystemClipboard(std::string copyCmd, const uv_buf_t *buf,
 // WARN: MAYBE IT IS NOT A ISSUE???? I NEED TO CHECK OTHER THINGS FIRST
 void daemonToDaemonReadCallback(uv_stream_t *stream, ssize_t nread,
                                 const uv_buf_t *buf) {
+  spdlog::info("entering daemonToDaemonReadCallback");
 
   // check if nread is less than 0 if it is then there is an error
   if (nread < 0) {
     // stop stream on error
     uv_read_stop(stream);
+    return;
   }
+  if (!buf->base) {
+    spdlog::error("Recevied nul lbuffer in daemonToDaemonReadcallback");
+    return;
+  }
+
+  spdlog::info("allocating buffer size: {}", nread + 1);
+  char *buffer = new char[nread + 1];
+  memcpy(buffer, buf->base, nread);
+  buffer[nread] = '\0';
+  spdlog::info("buffer in daemonToDaemonReadCallback is {}", buffer);
 
   // if machine is localmachine send repeat information back to all connected
   // daemons
   spdlog::info("isLocalMachine is: {}", isLocalMachine);
   if (isLocalMachine == true) {
-    iterateOverStreams(connectedDaemonHandles, buf, nread);
-    copyToSystemClipboard(copyCmd, buf, nread);
+    iterateOverStreams(connectedDaemonHandles, buffer, nread);
+    copyToSystemClipboard(copyCmd, buffer, nread);
   }
   // send to all connected neovim instances
 
-  iterateOverStreams(connectedNvimHandles, buf, nread);
+  iterateOverStreams(connectedNvimHandles, buffer, nread);
+  spdlog::info("Leaving daemonToDaemonReadCallback");
+  delete[] buffer;
 }
 
 /*     __                     __                     __    _*/
