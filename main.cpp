@@ -6,6 +6,7 @@
 #include "includeAllRapidJson.h"
 #include "rapidjson/document.h"
 #include "rapidjson/error/en.h"
+#include <algorithm>
 #include <argparse/argparse.hpp>
 #include <cassert>
 #include <cstdlib>
@@ -33,6 +34,8 @@
 
 void getConfigDir(const std::vector<std::string> configDirectories,
                   std::string &configDir, int &error) {
+  spdlog::info("Entered getConfigDir");
+
   for (const std::string &path : configDirectories) {
     if (std::filesystem::exists(path)) {
       configDir = path;
@@ -41,6 +44,7 @@ void getConfigDir(const std::vector<std::string> configDirectories,
     }
   }
   error = -1;
+  spdlog::info("Leaving getConfigDir");
 }
 /*   __  ______________    ____________  __*/
 /*  / / / /_  __/  _/ /   /  _/_  __/\ \/ /*/
@@ -49,6 +53,7 @@ void getConfigDir(const std::vector<std::string> configDirectories,
 /*\____/ /_/ /___/_____/___/ /_/     /_/   */
 /*                                         */
 std::vector<std::string> getFilenamesInDirectory(const std::string &directory) {
+  spdlog::info("Entered getFilenamesInDirectory");
   std::vector<std::string> filenames;
 
   for (const auto &entry : std::filesystem::directory_iterator(directory)) {
@@ -56,6 +61,7 @@ std::vector<std::string> getFilenamesInDirectory(const std::string &directory) {
     filenames.push_back(entry.path().filename().string());
   }
   return filenames;
+  spdlog::info("Leaving getFilenamesInDirectory");
 }
 //    ________    ____  ____  ___    __
 //   / ____/ /   / __ \/ __ )/   |  / /
@@ -75,6 +81,7 @@ int TIMESTAMP;
 // hopefully unique enough tmp directory
 #define TMP_DIR "/tmp/com.sebastianmusic.nvimclipboardsync/"
 void createTmpDir() {
+  spdlog::info("Entered createTmpDir");
   struct stat st;
   if (stat(TMP_DIR, &st) == 0) {
     if (!S_ISDIR(st.st_mode)) {
@@ -90,12 +97,12 @@ void createTmpDir() {
     }
     spdlog::info("Created Temporary directory: {}", TMP_DIR);
   }
+  spdlog::info("Leaving createTmpDir");
 }
 
 void iterateOverStreams(std::vector<uv_stream_t *> vectorToIterateOver,
                         char *buf, ssize_t nread) {
-
-  spdlog::info("entered iterateOverStreams");
+  spdlog::info("Entered iterateOverStreams");
   if (buf != NULL) {
     spdlog::info("buffer is {}", std::string(buf));
   } else {
@@ -121,6 +128,7 @@ void iterateOverStreams(std::vector<uv_stream_t *> vectorToIterateOver,
       delete writeRequest;
     }
   }
+  spdlog::info("Leaving iterateOverStreams");
 }
 
 //  _   ___     _____ __  __   _____ ___
@@ -141,15 +149,34 @@ void iterateOverStreams(std::vector<uv_stream_t *> vectorToIterateOver,
 
 static void nvimMemoryAllocationCallback(uv_handle_t *handle,
                                          size_t suggested_size, uv_buf_t *buf) {
+  spdlog::info("entered nvimMemoryAllocationCallback");
   buf->base = (char *)malloc(suggested_size);
   buf->len = suggested_size;
+  spdlog::info("Leaving nvimMemoryAllocationCallback");
+}
+
+void nvimCloseCallback(uv_handle_t *handle) {
+  spdlog::info("Entered nvimCloseCallback");
+  spdlog::info("Freeing nvimHandle");
+  free(handle);
+  spdlog::info("Removing handle from connectedNvimHandles");
+  connectedNvimHandles.erase(std::remove(connectedNvimHandles.begin(),
+                                         connectedNvimHandles.end(),
+                                         (uv_stream_t *)handle),
+                             connectedNvimHandles.end());
+  spdlog::info("Leaving nvimCloseCallback");
 }
 
 void readFromNvim(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
+  spdlog::info("entered readFromNvim");
   // check if nread is less than 0 if it is then there is an error
   if (nread < 0) {
     // stop stream on error
     uv_read_stop(stream);
+    spdlog::info("nread is less than 0 error");
+    spdlog::info("attemtping uv_close then returning from function");
+    uv_close((uv_handle_t *)stream, nvimCloseCallback);
+    return;
   }
   char *buffer = new char[nread + 1];
   memcpy(buffer, buf->base, nread);
@@ -159,14 +186,17 @@ void readFromNvim(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
   spdlog::info("char buffer in readFromNvim {}", buffer);
   iterateOverStreams(connectedDaemonHandles, buffer, nread);
   delete[] buffer;
+  spdlog::info("Leaving readFromNvim");
 }
 
 void nvimConnectCallback(uv_connect_t *req, int status) {
+  spdlog::info("Entered nvimConnectCallback");
   if (status < 0) {
     spdlog::error("error occured in connection callback could not connect");
     return;
   }
   uv_read_start(req->handle, nvimMemoryAllocationCallback, readFromNvim);
+  spdlog::info("Leaving nvimConnectCallback");
 }
 
 typedef std::map<std::string, uv_stream_t *> PipenameToHandle;
@@ -202,6 +232,7 @@ void daemonToNvimConnectionCallback(uv_stream_t *server, int status) {
 void tmpDirectoryUpdateEventCallback(uv_fs_event_t *handle,
                                      const char *filename, int events,
                                      int status) {
+  spdlog::info("Entered tmpDirectoryUpdateEventCallback");
   // Might have to convert filename to type int?
   if (filename != NULL) {
     if (std::find_if(connectedNvimClientsPipesMap.begin(),
@@ -228,6 +259,8 @@ void tmpDirectoryUpdateEventCallback(uv_fs_event_t *handle,
   } else {
     spdlog::error("filename is null");
   }
+
+  spdlog::info("Leaving tmpDirectoryUpdateEventCallback");
 }
 
 void cleanTmpDir() {
@@ -281,17 +314,21 @@ void cleanTmpDir() {
 static void daemonMemoryAllocationCallback(uv_handle_t *handle,
                                            size_t suggested_size,
                                            uv_buf_t *buf) {
+  spdlog::info("Entered daemonMemoryAllocatioCallback");
   buf->base = (char *)malloc(suggested_size);
   buf->len = suggested_size;
+  spdlog::info("Leaving daemonMemoryAllocatioCallback");
 }
 
 void daemonToDaemonWriteCallback(uv_write_t *req, int status) {
+  spdlog::info("Entered daemonToDaemonWriteCallback");
   if (status < 0) {
     perror("error in daemonToDaemonWriteCallback");
     return;
   } else {
     spdlog::info("written memory to daemon correctly");
   }
+  spdlog::info("Leaving daemonToDaemonWriteCallback");
 }
 
 void copyToSystemClipboard(std::string copyCmd, char *buf, ssize_t nread) {
@@ -390,8 +427,8 @@ void daemonToDaemonReadCallback(uv_stream_t *stream, ssize_t nread,
   // send to all connected neovim instances
 
   iterateOverStreams(connectedNvimHandles, buffer, nread);
-  spdlog::info("Leaving daemonToDaemonReadCallback");
   delete[] buffer;
+  spdlog::info("Leaving daemonToDaemonReadCallback");
 }
 
 /*     __                     __                     __    _*/
@@ -468,9 +505,8 @@ void setupListeningSocket(int port) {
 }
 
 void setupListeningPipe() {
-  std::filesystem::path path = std::string(TMP_DIR) + "listeningPipe";
-
   spdlog::info("entered setupListeningPipe");
+  std::filesystem::path path = std::string(TMP_DIR) + "listeningPipe";
   if (std::filesystem::exists(path)) {
     spdlog::info("listeningPipe already exists, removing it");
     std::filesystem::remove(path);
