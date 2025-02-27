@@ -2,6 +2,11 @@
 // sync clipboards there or atleast have an option to turn clipboard syncing off
 //
 // NOTE: Jeg har sett probelmet feil
+//
+//
+// NOTE: maybe freeing the buffer in readFromNvim caused issue?
+//
+// TODO: refactor function names and make it more logical
 
 #include "includeAllRapidJson.h"
 #include "rapidjson/document.h"
@@ -18,6 +23,7 @@
 #include <stdexcept>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <toml++/toml.hpp>
@@ -101,13 +107,17 @@ void createTmpDir() {
 }
 
 void iterateOverStreams(std::vector<uv_stream_t *> vectorToIterateOver,
-                        char *buf, ssize_t nread) {
+                        char *buf, ssize_t nread, std::string vectorName) {
   spdlog::info("Entered iterateOverStreams");
   if (buf != NULL) {
     spdlog::info("buffer is {}", std::string(buf));
   } else {
     spdlog::info("buffer is empty");
   }
+  spdlog::info("working with vector: {}", vectorName);
+  spdlog::info("nread in iterateOverStreams is {}", nread);
+  spdlog::info("amount of vectors to iterate over are {}",
+               vectorToIterateOver.size());
 
   for (uv_stream_t *handle : vectorToIterateOver) {
 
@@ -178,14 +188,26 @@ void readFromNvim(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
     uv_close((uv_handle_t *)stream, nvimCloseCallback);
     return;
   }
+
+  // NOTE:
+  // The uv_buf_t seems to be filling up throughout subsequent calls and i am
+  // sort of going around the issue by creating this new buffer i need a way to
+  // clear it again
+  //
+  //
   char *buffer = new char[nread + 1];
   memcpy(buffer, buf->base, nread);
   buffer[nread] = '\0';
-  spdlog::info("uv_buf_t in readFromNvim {}", std::string(buf->base, buf->len));
+  spdlog::info("uv_buf_t in readFromNvim is {}",
+               std::string(buf->base, buf->len));
+  spdlog::info("nread in readFromNvim is {}", nread);
 
   spdlog::info("char buffer in readFromNvim {}", buffer);
-  iterateOverStreams(connectedDaemonHandles, buffer, nread);
+  iterateOverStreams(connectedDaemonHandles, buffer, nread,
+                     "connectedDaemonHandles");
   delete[] buffer;
+  spdlog::info("freeing buf->base in readFromNvim");
+  free(buf->base);
   spdlog::info("Leaving readFromNvim");
 }
 
@@ -315,6 +337,7 @@ static void daemonMemoryAllocationCallback(uv_handle_t *handle,
                                            size_t suggested_size,
                                            uv_buf_t *buf) {
   spdlog::info("Entered daemonMemoryAllocatioCallback");
+  spdlog::info("allocating suggested size {}", suggested_size);
   buf->base = (char *)malloc(suggested_size);
   buf->len = suggested_size;
   spdlog::info("Leaving daemonMemoryAllocatioCallback");
@@ -338,6 +361,7 @@ void copyToSystemClipboard(std::string copyCmd, char *buf, ssize_t nread) {
   spdlog::info("json is {}", buf);
   spdlog::info("json is above");
   spdlog::info("jsonStr is {}", buf);
+  std::string jsonString = std::string(buf);
 
   rapidjson::Document doc;
 
@@ -390,8 +414,18 @@ void copyToSystemClipboard(std::string copyCmd, char *buf, ssize_t nread) {
   spdlog::info("Leaving copyToSystemClipboard");
 }
 
-// This function sends read data to all nvim clients, if it is localMachine it
-// also sends it to every connected daemon
+void daemonToDaemonCloseCallback(uv_handle_t *handle) {
+  spdlog::info("Entered daemonToDaemonCloseCallback");
+  spdlog::info("attemtping to free might be issue with malloc and new memory "
+               "allocation mismatch");
+  free(handle);
+  spdlog::info("attemtping to remove dameon from datastructure");
+  connectedDaemonHandles.erase(std::remove(connectedDaemonHandles.begin(),
+                                           connectedDaemonHandles.end(),
+                                           (uv_stream_t *)handle),
+                               connectedDaemonHandles.end());
+  spdlog::info("Leaving daemonToDaemonCloseCallback");
+}
 
 // TODO: Make copies of incomming buffer so its not used up by the first
 // function  but rather sent to all different functions
@@ -404,6 +438,7 @@ void daemonToDaemonReadCallback(uv_stream_t *stream, ssize_t nread,
   if (nread < 0) {
     // stop stream on error
     uv_read_stop(stream);
+    daemonToDaemonCloseCallback((uv_handle_t *)stream);
     return;
   }
   if (!buf->base) {
@@ -411,23 +446,31 @@ void daemonToDaemonReadCallback(uv_stream_t *stream, ssize_t nread,
     return;
   }
 
+  spdlog::info("nread in daemonToDaemonReadCallback is {}", nread);
   spdlog::info("allocating buffer size: {}", nread + 1);
   char *buffer = new char[nread + 1];
   memcpy(buffer, buf->base, nread);
   buffer[nread] = '\0';
+  spdlog::info("uv_buf_t in daemonToDaemonReadCallback is {}",
+               std::string(buf->base, buf->len));
   spdlog::info("buffer in daemonToDaemonReadCallback is {}", buffer);
 
   // if machine is localmachine send repeat information back to all connected
   // daemons
   spdlog::info("isLocalMachine is: {}", isLocalMachine);
   if (isLocalMachine == true) {
-    iterateOverStreams(connectedDaemonHandles, buffer, nread);
+    // NOTE: checking if this stops errors
+    // iterateOverStreams(connectedDaemonHandles, buffer, nread);
     copyToSystemClipboard(copyCmd, buffer, nread);
   }
   // send to all connected neovim instances
 
-  iterateOverStreams(connectedNvimHandles, buffer, nread);
+  iterateOverStreams(connectedNvimHandles, buffer, nread,
+                     "connectedNvimHandles");
   delete[] buffer;
+  spdlog::info("attempting to free buf->base in daemonTodaemonReadCallback to "
+               "see if resolves issue");
+  free(buf->base);
   spdlog::info("Leaving daemonToDaemonReadCallback");
 }
 
@@ -455,6 +498,13 @@ void remoteDameonToLocalDaemonConnectionCallback(uv_connect_t *req,
   uv_read_start(localHandle, daemonMemoryAllocationCallback,
                 daemonToDaemonReadCallback);
 
+  int vectorSize = connectedDaemonHandles.size();
+  spdlog::info("vector size on remoteDaemon is: {}", vectorSize);
+  if (vectorSize > 1) {
+    spdlog::error("TRIED TO CONNECT TO A SECOND LOCAL DAEMON, UNDEFINED "
+                  "BEHAVIOUR EXITING");
+    exit(-1);
+  }
   connectedDaemonHandles.push_back((uv_stream_t *)localHandle);
   spdlog::info("Leaving remoteDaemonToLocalDaemonConnectionCallback");
 }
