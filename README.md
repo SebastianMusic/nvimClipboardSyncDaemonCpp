@@ -1,9 +1,8 @@
 # WIP Info
-The plugin now functions sort of, it correctly transfers clipboard data to and
-from remote machines to local host and syncs this correctly.
-The issue now is memory allocation making it so that when you exit any connected
-nvim instance it makes the daemon crash, something which needs fixing before any
-actual usage. other than that its getting close.
+The plugin is in now a sort of working state. the only currently known crash is
+when you rapidly yank repeatedly on the remote server (holding in y) that will
+crash it. It makes the local daemon for some reason read multiple of the same
+issue which is the issue being actively investigated
 
 
 # Nvim clipboard sync daemon
