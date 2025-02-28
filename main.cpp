@@ -193,12 +193,6 @@ void readFromNvim(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
     return;
   }
 
-  // NOTE:
-  // The uv_buf_t seems to be filling up throughout subsequent calls and i am
-  // sort of going around the issue by creating this new buffer i need a way to
-  // clear it again
-  //
-  //
   char *buffer = new char[nread + 1];
   memcpy(buffer, buf->base, nread);
   buffer[nread] = '\0';
@@ -253,71 +247,6 @@ void daemonToNvimConnectionCallback(uv_stream_t *server, int status) {
   }
 
   spdlog::info("Leaving daemonToNvimConnectionCallback");
-}
-
-void tmpDirectoryUpdateEventCallback(uv_fs_event_t *handle,
-                                     const char *filename, int events,
-                                     int status) {
-  spdlog::info("Entered tmpDirectoryUpdateEventCallback");
-  // Might have to convert filename to type int?
-  if (filename != NULL) {
-    if (std::find_if(connectedNvimClientsPipesMap.begin(),
-                     connectedNvimClientsPipesMap.end(),
-                     [&](const PipenameToHandle &map) {
-                       return map.find(filename) != map.end();
-                     }) != connectedNvimClientsPipesMap.end()) {
-
-      spdlog::warn("file descriptor for nvim domain socket already exists in");
-    } else {
-      // create a pipe type for the new unix domain socket
-      uv_pipe_t *newSocket = new uv_pipe_t;
-      uv_pipe_init(loop, newSocket, 1);
-      uv_connect_t *connectionRequest = new uv_connect_t;
-      uv_pipe_connect(connectionRequest, newSocket,
-                      (std::string(TMP_DIR) + filename).c_str(),
-                      nvimConnectCallback);
-
-      PipenameToHandle newMap;
-      newMap[filename] = ((uv_stream_t *)&newSocket);
-      connectedNvimClientsPipesMap.push_back(newMap);
-      connectedNvimClientsPipesDeprecated.push_back((uv_stream_t *)&newSocket);
-    }
-  } else {
-    spdlog::error("filename is null");
-  }
-
-  spdlog::info("Leaving tmpDirectoryUpdateEventCallback");
-}
-
-void cleanTmpDir() {
-  // first get all the pipe names in the directory add them to an array
-  std::vector<std::string> filenames = getFilenamesInDirectory(TMP_DIR);
-  // then create array to store files that need to be closed
-  std::vector<std::string> toBeRemoved;
-  // make a vector with all filenames from nvimconnectedpipes in correct order
-  // for easier lookup
-  std::vector<std::string> connectedNvimClientsNames;
-  for (int i = 0; i < connectedNvimClientsPipesMap.size(); i++) {
-    connectedNvimClientsNames.push_back(
-        connectedNvimClientsPipesMap[i].begin()->first);
-  }
-  // check if there are files in the nvimconnectedpipes vector
-  // which are not currently here
-  for (const auto filename : filenames) {
-    auto it = std::find(connectedNvimClientsNames.begin(),
-                        connectedNvimClientsNames.end(), filename);
-    // if it does not find the file
-    if (it == connectedNvimClientsNames.end()) {
-      toBeRemoved.push_back(filename);
-    }
-  }
-
-  // remove all files from to be removed
-  if (toBeRemoved.size() > 0) {
-    for (const auto filename : toBeRemoved) {
-      std::filesystem::remove(std::string(TMP_DIR) + filename);
-    }
-  }
 }
 
 //  ____    _    _____ __  __  ___  _   _   _____ ___
@@ -462,9 +391,6 @@ void daemonToDaemonCloseCallback(uv_handle_t *handle) {
   spdlog::info("Leaving daemonToDaemonCloseCallback");
 }
 
-// TODO: Make copies of incomming buffer so its not used up by the first
-// function  but rather sent to all different functions
-// WARN: MAYBE IT IS NOT A ISSUE???? I NEED TO CHECK OTHER THINGS FIRST
 void daemonToDaemonReadCallback(uv_stream_t *stream, ssize_t nread,
                                 const uv_buf_t *buf) {
   spdlog::info("entering daemonToDaemonReadCallback");
@@ -544,10 +470,6 @@ void remoteDameonToLocalDaemonConnectionCallback(uv_connect_t *req,
   connectedDaemonHandles.push_back((uv_stream_t *)localHandle);
   spdlog::info("Leaving remoteDaemonToLocalDaemonConnectionCallback");
 }
-
-//
-//
-//
 
 void daemonToDaemonConnectionCallback(uv_stream_t *server, int status) {
   spdlog::info("Entering daemonToDaemonConnectionCallback");
@@ -693,34 +615,12 @@ int main(int argc, char *argv[]) {
   if (isLocalMachine) {
     spdlog::info("Entered isLocalMachine");
 
-    // set up event listener that listens to new sockets in the TMP dir (
-    // sockets are created by the nvim companion plugin and are named using
-    // uuid) handler that adds new sockets to a datastructure and starts
-    // reading them
-    uv_fs_event_t tmpDirectoryListener;
-    spdlog::info("trying to set up init filesystem event listener");
-    uv_fs_event_init(loop, &tmpDirectoryListener);
-    spdlog::info("succesfully initialized filesystem event listener");
-    spdlog::info("trying to start filesystem eventlistener");
-    uv_fs_event_start(&tmpDirectoryListener, tmpDirectoryUpdateEventCallback,
-                      TMP_DIR, 0);
-    spdlog::info("succesfully started filesystem event listener");
-
     if (!optCopyCmd) {
       std::cerr
           << "Error: 'copyCmd' key missing or not a string in config file!"
           << std::endl;
       return 1;
     }
-    // set up event listener that listens for the removal of sockets in the
-    // TMP
-
-    // dir handler that removes the removed socket from the data structure
-
-    // set up event listener that checks if nvim sockets are still used
-    // if socket is no longer associated with a process remove it
-
-    // set up event listener that listens for new tcp connections
 
     spdlog::info("trying to setup listening socket");
     setupListeningSocket(port);
@@ -730,26 +630,8 @@ int main(int argc, char *argv[]) {
     setupListeningPipe();
     spdlog::info("succesfully setup listening pipe");
 
-    // set up handler that adds new tcp connection fd to data structure
-
-    // set up event listener that listens for tcp disconnections
-
-    // set up handler that removes tcp connection fd from data structure
-
-    // set up event listener that listens to new data inside of any nvim
-    // sockets Handler for sending this message out to all connected tcp
-    // connections
-
-    // set up event listener that listens for new data from tcp connection
-    // iterates over nvim connection data structure and sends data to every
-    // single one
-
-    // event listener that listens for interrupt signal
-    // handler sends interrupt signal to all nvim instances, sends interrupt
-    // to all remote servers, and cleans up tmp directory, and stops uv
-
     // start uv loop
-    spdlog::info("trying to run uv_run()");
+    spdlog::info("starting uv_run()");
     uv_run(loop, UV_RUN_DEFAULT);
     spdlog::info("succesfully ran uv_run()");
   }
@@ -759,38 +641,9 @@ int main(int argc, char *argv[]) {
   if (!isLocalMachine) {
     spdlog::info("entered remote machine");
 
-    // set up event listener that listens to new sockets in the TMP dir (
-    // sockets are created by the nvim companion plugin and are named using
-    // uuid) handler that adds new sockets to a datastructure and starts
-    // reading them
     spdlog::info("trying to setup listening pipe");
     setupListeningPipe();
     spdlog::info("succesfully setup listening pipe");
-
-    // set up event listener that listens for the removal of sockets in the
-    // TMP dir handler that removes the removed socket form the data structure
-
-    // set up event listener that checks if nvim sockets are still used
-    // if socket is no longer associated with a process remove it
-
-    // set up event listener that listens for new tcp connections
-    // set up handler that adds new tcp connection fd to data structure
-
-    // set up event listener that listens for tcp disconnections
-    // set up handler that removes tcp connection fd from data structure
-
-    // set up event listener that listens to new data inside of any nvim
-    // sockets Handler for sending this message out to all connected tcp
-    // connections
-
-    // set up event listener that listens for new data from tcp connection
-    // iterates over nvim connection data structure and sends data to every
-    // single one
-
-    // event listener that listens for interrupt signal handler sends
-    // interrupt signal to all nvim instances, and cleans up tmp directory,
-    // and stops uv
-
     // attempt to connect to local daemon
 
     struct sockaddr_in addr;
@@ -806,28 +659,10 @@ int main(int argc, char *argv[]) {
                    remoteDameonToLocalDaemonConnectionCallback);
 
     // start uv loop
-    spdlog::info("trying to run uv_run()");
+    spdlog::info("Starting run uv_run()");
     uv_run(loop, UV_RUN_DEFAULT);
     spdlog::info("succesfully ran uv_run()");
   }
 
-  // Psuedo logic
-  //  Daemon sets up a tmp directory which the nvim clients can add a socket
-  //  to. daemon listens for new sockets in the directory and adds them to a
-  //  datastructure
-  //
-  // if daemon runs in remote mode try to connect to client on specified port
-  // setup event listener to forward incoming messages to all nvim sockets in
-  // in tmp directory
-
-  // setup eventlistener to forward outgoing messages from nvim socket
-  // directory to localmachine
-
-  // if daemon runs in local mode listen for remote connection run an accept
-  // loop and add tcp connections to a datastructure. when reciving incoming
-  // messages forward to all remote connections and nvim clients. when getting
-  // outgoing nvim messages send to all remote connections
-
-  //  list daemon listens to every socket and if there is some info to be read
   return 0;
 }

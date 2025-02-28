@@ -1,43 +1,59 @@
-# WIP Info
-The plugin is in now a sort of working state. the only currently known crash is
-when you rapidly yank repeatedly on the remote server (holding in y) that will
-crash it. It makes the local daemon for some reason read multiple of the same
-issue which is the issue being actively investigated
-
+# WIP INFO
+Neovim plugin is currently not correctly packeged so will not work as says in
+this readme
 
 # Nvim clipboard sync daemon
+Sync Clipboards between local and remote machines over ssh reverse tunnels
 
-I am recreating the clipboard sync daemon i started on in december in C++ and aim to
-create a nvim plugin that will go well with it.
+## Installation (WIP)
 
-The goal is to be able to sync your system and nvim clipboard registers with
-multiple remote machines at the same time.
-
-The planned functionality is you will run the daemon on a given port on your
-local machine. 
+## Configuration
 ```bash
-# starts daemon on local machine listening on port 3000
-daemon -p 3000 --isLocalMachine
+# Create directory 
+mkdir ~/.config/nvimClipboardSync/
+~/.config/nvimClipboardSync/
+echo 'copyCmd = ""' > config.toml
+```
+Then open the file and add your clipboard command on make this would be `pbcopy`
+and if you are on wayland it might be `wl-copy`
+```
+nvim ~/.config/nvimClipboardSync/config.toml
 ```
 
-Then you can ssh into remote machines with a reverse tunnel
+## How to use
+To use the daemon first start it on your localmachine on a port of your choosing
+with the --isLocalMachine flag
+```bash
+# starts daemon on local machine listening on port 3000
+./nvimClipboardSync -p 3000 --isLocalMachine &
+```
+
+Then next ssh into your remote machine specifying with the -R flag which port on
+the remote machine will be forwarded to which port on your local machine;
 ```bash
 # forwards localhost:2000 on the remote machine to localhost:3000 on your local
 # machine, ergo your daemon
 ssh -R 2000:localhost:3000
 ```
-Then you will set up the port to which the remote machine will send its info and
-listen
+On the remote machine start the daemon on the port you specifed in the previous
+command
 ```bash
 # only specify port on the remote machine
-./daemon -p 2000
+./nvimClipboardSync -p 2000 &
 ```
-then you will simply start neovim and anything copied will be transfered to
-your remote machines clipboard and vice verca. 
 
-I will also have to implement a config file where users can specify a clipboard
-command such that it will sync with their local machine. such as for example
-`pbcopy` for mac `wl-copy` for linux machines using wayland.
+Make sure to have installed the [companion plugin](https://github.com/SebastianMusic/nvimClipboardSyncPlugin) for neovim
 
+Now with the daemon running and the neovim plugin installed you can open up neovim to automaticlly connect to your daemon.
+simply yank any text and this will be sent to the other machine
+When text is sent from the local machine to the remote machine paste it using the
+`"0` register
 
+# Current limitations
+Currently syncing from one remote machine to another, but it is possible to sync
+from many remote machines to the same local machine. This is being worked on
 
+# Future todos
+Streamline and make installation easier 
+Add possibility to sync multiple remote machines
+Better precision timestamps to make yanking in quick succession possible
