@@ -1,0 +1,36 @@
+@startuml
+[*] --> Main
+Main --> isLocalMachine : Yes
+Main --> notisLocalMachine : No
+
+' localMachine'
+isLocalMachine --> setupListeningSocket 
+isLocalMachine --> setupListeningPipe
+'tcp'
+setupListeningSocket --> daemonToDaemonConnectionCallback
+daemonToDaemonConnectionCallback --> daemonMemoryAllocationCallback
+daemonToDaemonConnectionCallback --> daemonToDaemonReadCallback
+daemonToDaemonReadCallback --> daemonToDaemonCloseCallback : nread < 0
+daemonToDaemonReadCallback --> iterateOverStreams : nread > 0
+daemonToDaemonReadCallback --> copyToSystemClipboard
+'pipe'
+setupListeningPipe --> daemonToNvimConnectionCallback
+daemonToNvimConnectionCallback --> nvimMemoryAllocationCallback
+daemonToNvimConnectionCallback --> readFromNvim
+readFromNvim --> nvimCloseCallback : nread < 0
+readFromNvim --> iterateOverStreams : nread > 0
+
+'remote machine'
+'pipe'
+notisLocalMachine --> setupListeningPipe
+'tcp'
+notisLocalMachine --> remoteDaemonToLocalDaemonConnectionCallback
+remoteDaemonToLocalDaemonConnectionCallback --> daemonMemoryAllocationCallback
+remoteDaemonToLocalDaemonConnectionCallback --> daemonToDaemonReadCallback
+
+iterateOverStreams --> daemonToDaemonReadCallback : write to daemon
+iterateOverStreams --> nvimClients : write to nvim Clients
+
+
+@enduml
+

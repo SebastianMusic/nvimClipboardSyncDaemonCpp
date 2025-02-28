@@ -1,10 +1,7 @@
 // TODO: Maybe not have a config file on remote machine since we dont need to
 // sync clipboards there or atleast have an option to turn clipboard syncing off
 //
-// NOTE: Jeg har sett probelmet feil
-//
-//
-// NOTE: maybe freeing the buffer in readFromNvim caused issue?
+// TODO: need to improve timer precission more detailed unix time stamps
 //
 // TODO: refactor function names and make it more logical
 
@@ -26,6 +23,7 @@
 #include <string>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <toml++/toml.hpp>
 #include <unistd.h>
 #include <uv.h>
@@ -123,6 +121,8 @@ void iterateOverStreams(std::vector<uv_stream_t *> vectorToIterateOver,
 
     uv_write_t *writeRequest = new uv_write_t();
     uv_buf_t bufs = uv_buf_init(buf, nread);
+    spdlog::info("bufs in iterateOverStreams is: {} nread in bufs is: {}",
+                 std::string(bufs.base, nread), nread);
 
     int result = uv_write(
         writeRequest, handle, &bufs, 1, [](uv_write_t *req, int status) {
@@ -354,6 +354,35 @@ void daemonToDaemonWriteCallback(uv_write_t *req, int status) {
   spdlog::info("Leaving daemonToDaemonWriteCallback");
 }
 
+void validateBuffer(char *buf, ssize_t nread) {
+  spdlog::info("Entered validateBuffer");
+  char buffer[nread + 1];
+  int i = 0;
+  while (i < nread) {
+    buffer[i] = buf[i];
+
+    if (buf[i] == '}') {
+      buffer[i + 1] = '\0';
+      // Try to parse it to see if its a valid json object
+      rapidjson::Document doc;
+      doc.Parse(buffer);
+
+      if (!doc.HasParseError()) {
+        memcpy(buf, buffer, i + 1);
+        i++;
+        buf[i] = '\0';
+        spdlog::info("Validated buffer in validateBuffer is: {}",
+                     std::string(buf, i));
+        spdlog::info("Leaving validateBuffer json object succseffully found");
+        return;
+      }
+    }
+    i++;
+  }
+  buf[0] = '\0';
+  spdlog::error("Leaving validateBuffer no json object found");
+}
+
 void copyToSystemClipboard(std::string copyCmd, char *buf, ssize_t nread) {
   spdlog::info("entered copyToSystemClipboard");
   spdlog::info("bytes read: {}", nread);
@@ -369,6 +398,8 @@ void copyToSystemClipboard(std::string copyCmd, char *buf, ssize_t nread) {
   if (doc.HasParseError()) {
     spdlog::error("JSON parse error: {}",
                   rapidjson::GetParseError_En(doc.GetParseError()));
+    validateBuffer(buf, nread);
+    doc.Parse(buf);
   }
   spdlog::info("attempting assertions in copyToSystemCLipboard");
   spdlog::info("attemting to assert odc.IsObject");
@@ -459,7 +490,8 @@ void daemonToDaemonReadCallback(uv_stream_t *stream, ssize_t nread,
   // daemons
   spdlog::info("isLocalMachine is: {}", isLocalMachine);
   if (isLocalMachine == true) {
-    // NOTE: checking if this stops errors
+    // NOTE: disabled this currently to stop errors but it also means that its
+    // only possible with a maximum of one remote machine instead of multiple
     // iterateOverStreams(connectedDaemonHandles, buffer, nread);
     copyToSystemClipboard(copyCmd, buffer, nread);
   }
@@ -659,8 +691,8 @@ int main(int argc, char *argv[]) {
 
     // set up event listener that listens to new sockets in the TMP dir (
     // sockets are created by the nvim companion plugin and are named using
-    // uuid) handler that adds new sockets to a datastructure and starts reading
-    // them
+    // uuid) handler that adds new sockets to a datastructure and starts
+    // reading them
     uv_fs_event_t tmpDirectoryListener;
     spdlog::info("trying to set up init filesystem event listener");
     uv_fs_event_init(loop, &tmpDirectoryListener);
@@ -676,7 +708,8 @@ int main(int argc, char *argv[]) {
           << std::endl;
       return 1;
     }
-    // set up event listener that listens for the removal of sockets in the TMP
+    // set up event listener that listens for the removal of sockets in the
+    // TMP
 
     // dir handler that removes the removed socket from the data structure
 
@@ -699,38 +732,39 @@ int main(int argc, char *argv[]) {
 
     // set up handler that removes tcp connection fd from data structure
 
-    // set up event listener that listens to new data inside of any nvim sockets
-    // Handler for sending this message out to all connected tcp connections
+    // set up event listener that listens to new data inside of any nvim
+    // sockets Handler for sending this message out to all connected tcp
+    // connections
 
     // set up event listener that listens for new data from tcp connection
     // iterates over nvim connection data structure and sends data to every
     // single one
 
     // event listener that listens for interrupt signal
-    // handler sends interrupt signal to all nvim instances, sends interrupt to
-    // all remote servers, and cleans up tmp directory, and stops uv
+    // handler sends interrupt signal to all nvim instances, sends interrupt
+    // to all remote servers, and cleans up tmp directory, and stops uv
 
     // start uv loop
     spdlog::info("trying to run uv_run()");
     uv_run(loop, UV_RUN_DEFAULT);
     spdlog::info("succesfully ran uv_run()");
   }
-  // main differnece is that !isLocalMachine does not forward interrupt signals
-  // sent to it to other tcp connections and it does not iterate nvim messages
-  // to multiple tcp connections like isLocalMachine does
+  // main differnece is that !isLocalMachine does not forward interrupt
+  // signals sent to it to other tcp connections and it does not iterate nvim
+  // messages to multiple tcp connections like isLocalMachine does
   if (!isLocalMachine) {
     spdlog::info("entered remote machine");
 
     // set up event listener that listens to new sockets in the TMP dir (
     // sockets are created by the nvim companion plugin and are named using
-    // uuid) handler that adds new sockets to a datastructure and starts reading
-    // them
+    // uuid) handler that adds new sockets to a datastructure and starts
+    // reading them
     spdlog::info("trying to setup listening pipe");
     setupListeningPipe();
     spdlog::info("succesfully setup listening pipe");
 
-    // set up event listener that listens for the removal of sockets in the TMP
-    // dir handler that removes the removed socket form the data structure
+    // set up event listener that listens for the removal of sockets in the
+    // TMP dir handler that removes the removed socket form the data structure
 
     // set up event listener that checks if nvim sockets are still used
     // if socket is no longer associated with a process remove it
@@ -741,15 +775,17 @@ int main(int argc, char *argv[]) {
     // set up event listener that listens for tcp disconnections
     // set up handler that removes tcp connection fd from data structure
 
-    // set up event listener that listens to new data inside of any nvim sockets
-    // Handler for sending this message out to all connected tcp connections
+    // set up event listener that listens to new data inside of any nvim
+    // sockets Handler for sending this message out to all connected tcp
+    // connections
 
     // set up event listener that listens for new data from tcp connection
     // iterates over nvim connection data structure and sends data to every
     // single one
 
-    // event listener that listens for interrupt signal handler sends interrupt
-    // signal to all nvim instances, and cleans up tmp directory, and stops uv
+    // event listener that listens for interrupt signal handler sends
+    // interrupt signal to all nvim instances, and cleans up tmp directory,
+    // and stops uv
 
     // attempt to connect to local daemon
 
@@ -772,16 +808,16 @@ int main(int argc, char *argv[]) {
   }
 
   // Psuedo logic
-  //  Daemon sets up a tmp directory which the nvim clients can add a socket to.
-  //  daemon listens for new sockets in the directory and adds them to a
+  //  Daemon sets up a tmp directory which the nvim clients can add a socket
+  //  to. daemon listens for new sockets in the directory and adds them to a
   //  datastructure
   //
   // if daemon runs in remote mode try to connect to client on specified port
   // setup event listener to forward incoming messages to all nvim sockets in
   // in tmp directory
 
-  // setup eventlistener to forward outgoing messages from nvim socket directory
-  // to localmachine
+  // setup eventlistener to forward outgoing messages from nvim socket
+  // directory to localmachine
 
   // if daemon runs in local mode listen for remote connection run an accept
   // loop and add tcp connections to a datastructure. when reciving incoming
