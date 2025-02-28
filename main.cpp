@@ -4,6 +4,10 @@
 // TODO: need to improve timer precission more detailed unix time stamps
 //
 // TODO: refactor function names and make it more logical
+//
+// TODO: create a function to create a empty config file if it does not already
+// exist
+//
 
 #include "includeAllRapidJson.h"
 #include "rapidjson/document.h"
