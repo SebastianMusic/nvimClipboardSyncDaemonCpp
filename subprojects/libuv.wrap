@@ -1,0 +1,5 @@
+[wrap-git]
+directory=libuv
+url=https://github.com/libuv/libuv.git
+revision=v.1.50.0
+

@@ -57,3 +57,4 @@ from many remote machines to the same local machine. This is being worked on
 Streamline and make installation easier 
 Add possibility to sync multiple remote machines
 Better precision timestamps to make yanking in quick succession possible
+add correct licensing
