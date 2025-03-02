@@ -1,5 +1,0 @@
-[clipboard]
-command = "wl-copy"
-
-[network]
-port = 2000

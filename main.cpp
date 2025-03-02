@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <iostream>
 #include <netinet/in.h>
+#include <pthread.h>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <stdio.h>
@@ -84,7 +85,7 @@ bool isLocalMachine;
 std::vector<uv_stream_t *> connectedDaemonHandles;
 std::vector<uv_stream_t *> connectedNvimHandles;
 std::string copyCmd;
-int TIMESTAMP;
+long long TIMESTAMP;
 
 // hopefully unique enough tmp directory
 #define TMP_DIR "/tmp/com.sebastianmusic.nvimclipboardsync/"
@@ -338,12 +339,15 @@ void copyToSystemClipboard(std::string copyCmd, char *buf, ssize_t nread) {
   spdlog::info("attemting to assert odc.IsObject");
   doc.IsObject();
   spdlog::info("succsefully asserted odc.IsObject");
+  // NOTE: Changing so that timestamp is a string and i convert it to an int on
+  // the server
   spdlog::info("attempting to assert HasMember(TIMESTAMP)");
+
   assert(doc.HasMember("TIMESTAMP"));
   spdlog::info("succsefully asserted HasMember(TIMESTAMP)");
-  spdlog::info("attempting to assert (TIMESTAMP).IsInt()");
-  assert(doc["TIMESTAMP"].IsInt());
-  spdlog::info("Sucseffully asserted (TIMESTAMP).IsInt()");
+  spdlog::info("attempting to assert (TIMESTAMP).IsString()");
+  assert(doc["TIMESTAMP"].IsString());
+  spdlog::info("Sucseffully asserted (TIMESTAMP).IsString()");
   spdlog::info("attempting to assert HasMember(REGISTER)");
   assert(doc.HasMember("REGISTER"));
   spdlog::info("succsefully asserted HasMember(REGISTER)");
@@ -352,9 +356,10 @@ void copyToSystemClipboard(std::string copyCmd, char *buf, ssize_t nread) {
   spdlog::info("succsesfully asserted (Register).IsString()");
   spdlog::info("succsessfully asserted everything in copyToSystemClipboard");
 
-  int tmpTIMESTAMP = doc["TIMESTAMP"].GetInt();
   // if the new timestamp is newer than the current one then copy it into the
   // clipboard if not then discard it
+
+  long long tmpTIMESTAMP = std::stoll(doc["TIMESTAMP"].GetString());
   if (tmpTIMESTAMP > TIMESTAMP) {
     spdlog::info("timestamp is newer, updating clipboard");
     std::string REGISTER = doc["REGISTER"].GetString();
