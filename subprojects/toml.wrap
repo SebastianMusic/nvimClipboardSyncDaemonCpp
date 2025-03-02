@@ -1,0 +1,5 @@
+[wrap-file]
+directory = toml
+
+[provide]
+toml = toml_dep

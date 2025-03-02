@@ -29,7 +29,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <toml++/toml.hpp>
+#include <toml.hpp>
 #include <unistd.h>
 #include <uv.h>
 #include <vector>
