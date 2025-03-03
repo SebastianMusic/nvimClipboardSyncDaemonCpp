@@ -3,3 +3,5 @@ build/
 bin/
 vendor/
 .cache/
+vcpkg_installed/
+vcpkg/

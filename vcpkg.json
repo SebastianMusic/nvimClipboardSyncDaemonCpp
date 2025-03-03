@@ -1,0 +1,12 @@
+{
+	"name": "nvim-clipboard-sync",
+	"version": "0.1.0",
+	"builtin-baseline": "efb1e7436979a30c4d3e5ab2375fd8e2e461d541",
+	"dependencies": [
+		"libuv",
+		"rapidjson",
+		"spdlog",
+		"tomlplusplus",
+		"argparse"
+	]
+}

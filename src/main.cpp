@@ -9,7 +9,6 @@
 // exist
 //
 
-#include "includeAllRapidJson.h"
 #include "rapidjson/document.h"
 #include "rapidjson/error/en.h"
 #include <algorithm>
@@ -29,7 +28,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <toml.hpp>
+#include <toml++/toml.h>
 #include <unistd.h>
 #include <uv.h>
 #include <vector>
