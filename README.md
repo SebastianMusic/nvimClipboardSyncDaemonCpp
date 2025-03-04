@@ -1,89 +1,94 @@
-# Nvim clipboard sync daemon
-Sync Neovim Clipboards between local and remote machines over ssh reverse tunnels
+# Nvim Clipboard Sync Daemon
 
-## Known dependencies 
-zip
+Sync Neovim clipboards between local and remote machines over SSH reverse tunnels.
 
-## Installation Recipe (Currently only for linux)
-```bash 
-# clone needed repos
+## Known Dependencies
+
+- `zip`
+
+## Installation (Linux Only)
+
+```bash
+# Clone the necessary repositories
 git clone https://github.com/SebastianMusic/nvimClipboardSyncDaemonCpp.git /tmp/nvimClipboardSyncBuild && \
 git clone https://github.com/microsoft/vcpkg /tmp/nvimClipboardSyncBuild/vcpkg && \
-# Install vcpkg in current dir
-cd /tmp/nvimClipboardSyncBuild &&  \ 
+
+# Install vcpkg in the current directory
+cd /tmp/nvimClipboardSyncBuild && \
 /tmp/nvimClipboardSyncBuild/vcpkg/bootstrap-vcpkg.sh && \
-/tmp/nvimClipboardSyncBuild/vcpkg/vcpkg install && \ 
-# Build daemon
+/tmp/nvimClipboardSyncBuild/vcpkg/vcpkg install && \
+
+# Build the daemon
 mkdir /tmp/nvimClipboardSyncBuild/build && \
 cd /tmp/nvimClipboardSyncBuild/build && \
-cmake .. && \ 
-make 
-
-# Setup config file
-mkdir -p ~/.config/nvimClipboardSync/
-echo 'copyCmd = ""' >> ~/.config/nvimClipboardSync/config.toml
+cmake .. && \
+make
 ```
 
-#### After installation
-Move the binary to your path
+### Post-Installation
+
+To make the binary easily executable, move it to a directory in your PATH:
+
 ```bash
 mkdir -p ~/.local/bin
 mv /tmp/nvimClipboardSyncBuild/build/nvimClipboardSync ~/.local/bin/
 ```
-```
-# Bash users
+
+Ensure the directory is included in your PATH:
+
+```bash
+# For Bash users
 echo 'export PATH="$PATH:$HOME/.local/bin"' >> ~/.bashrc
 
-# Zsh users
+# For Zsh users
 echo 'export PATH="$PATH:$HOME/.local/bin"' >> ~/.zshrc
 ```
 
-## Configuration
-After installing the binary the only configuration you should do is provide the
-command to use for system clipboard syncing. on mac this would be `pbcopy` and
-on wayland it would likely be `wl-copy` but any command in which you could use
-it as  `echo "something to copy" | yourCopyCommand` should work
-```
+### Configuration
+
+Edit the configuration file to specify the command for system clipboard syncing. Common commands are `pbcopy` for macOS and `wl-copy` for Wayland. Ensure the command can handle input piped via stdin (e.g., `echo "text" | yourCopyCommand`).
+
+```bash
 nvim ~/.config/nvimClipboardSync/config.toml
 ```
 
-# How to use
-To use the daemon first start it on your localmachine on a port of your choosing
-with the --isLocalMachine flag
-```bash
-# starts daemon on local machine listening on port 3000
-./nvimClipboardSync -p 3000 --isLocalMachine &
-```
+## Usage
 
-Then next ssh into your remote machine specifying with the -R flag which port on
-the remote machine will be forwarded to which port on your local machine;
-```bash
-# forwards any request made to localhost:2000 on the remote machine to localhost:3000 on your local
-# machine, in this case in your daemon.
-ssh -R 2000:localhost:3000
-```
-On the remote machine start the daemon on the port you specifed in the previous
-command
-```bash
-# only specify port on the remote machine
-./nvimClipboardSync -p 2000 &
-```
+1. Start the daemon on your local machine, specifying a port and the `--isLocalMachine` flag:
 
-**Make sure to have installed the [companion plugin](https://github.com/SebastianMusic/nvimClipboardSyncPlugin) for neovim**
+    ```bash
+    # Start the daemon on the local machine listening on port 3000
+    ./nvimClipboardSync -p 3000 --isLocalMachine &
+    ```
 
-After making sure you have ran the daemon on both machines. To test it out try the following:
-1. open a neovim session on both machines.
-2. yank some text on your local machine and see how it is transported into your
-   remote machines `"0` register.
-3. yank some text on your remote machine and see how its both in your system
-   clipboard (if you specified a clipboard command) and in the `"0` register on
-   your local machine.
+2. SSH into your remote machine, setting up port forwarding:
 
-# Current limitations
-Currently it is only possible to sync from one local machine to one remote
-machine but this is being worked on.
+    ```bash
+    # Forward requests from localhost:2000 on the remote machine to localhost:3000 on the local machine
+    ssh -R 2000:localhost:3000 user@remote-machine
+    ```
 
-# Future todos
-Streamline and make installation easier for multiple operating systems
-Add possibility to sync multiple remote machines
-add correct licensing
+3. On the remote machine, start the daemon on the specified port:
+
+    ```bash
+    # Start the daemon on port 2000 on the remote machine
+    ./nvimClipboardSync -p 2000 &
+    ```
+
+**Note:** Install the [companion plugin](https://github.com/SebastianMusic/nvimClipboardSyncPlugin) for Neovim.
+
+### Testing
+
+1. Open Neovim on both the local and remote machines.
+2. Yank text on your local machine and observe its sync to the `"0` register on the remote machine.
+3. Yank text on your remote machine and see it synchronizing both to your system clipboard (if configured) and the `"0` register on your local machine.
+
+## Current Limitations
+
+- Currently supports clipboard syncing between one local machine and one remote machine.
+
+## Future Plans
+
+- Streamline installation across multiple operating systems.
+- Enable sync to and from multiple remote machines.
+- Add appropriate licensing.
