@@ -579,14 +579,14 @@ int main(int argc, char *argv[]) {
   argparse::ArgumentParser program("Nvim Clipboard sync");
 
   program.add_argument("-p")
-      .help("specify the port number to be used, default value is 8080")
+      .help("specify the port number to be used")
       .default_value(8080)
       .scan<'i', int>()
       .nargs(1);
 
   program.add_argument("--isLocalMachine")
       .help("Specify this argument on your local machine and do not specify it "
-            "on your remote servers")
+            "on your remote machines")
       .default_value(false)
       .implicit_value(true);
 
