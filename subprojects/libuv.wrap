@@ -1,5 +1,0 @@
-[wrap-git]
-directory=libuv
-url=https://github.com/libuv/libuv.git
-revision=V1.x
-
