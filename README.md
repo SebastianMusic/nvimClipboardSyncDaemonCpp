@@ -10,8 +10,8 @@ zip
 git clone https://github.com/SebastianMusic/nvimClipboardSyncDaemonCpp.git /tmp/nvimClipboardSyncBuild && \
 git clone https://github.com/microsoft/vcpkg /tmp/nvimClipboardSyncBuild/vcpkg && \
 # Install vcpkg in current dir
-/tmp/nvimClipboardSyncBuild/vcpkg/bootstrap-vcpkg.sh && \
 cd /tmp/nvimClipboardSyncBuild &&  \ 
+/tmp/nvimClipboardSyncBuild/vcpkg/bootstrap-vcpkg.sh && \
 /tmp/nvimClipboardSyncBuild/vcpkg/vcpkg install && \ 
 # Build daemon
 mkdir /tmp/nvimClipboardSyncBuild/build && \
@@ -21,24 +21,23 @@ make
 
 # Setup config file
 mkdir -p ~/.config/nvimClipboardSync/
-echo 'copyCmd = ""' > ~/.config/nvimClipboardSync/config.toml
+echo 'copyCmd = ""' >> ~/.config/nvimClipboardSync/config.toml
 ```
 
 #### After installation
-You should then move the new binary from the build folder into some folder you
-have in your path. such as a programs folder in your home directory
-if you do not have such a folder you could make it with
+Move the binary to your path
 ```bash
-mkdir ~/myPrograms
-mv /tmp/nvimClipboardSyncBuild/build/nvimClipboardSync ~/myPrograms
+mkdir -p ~/.local/bin
+mv /tmp/nvimClipboardSyncBuild/build/nvimClipboardSync ~/.local/bin/
 ```
-Then you should add this directory to your path
-```bash
-# for bash
-echo 'export PATH="$PATH:/home/<yourUsername>/myPrograms"' > .bashrc
-# for zsh
-echo 'export PATH="$PATH:/home/<yourUsername>/myPrograms"' > .zshrc
 ```
+# Bash users
+echo 'export PATH="$PATH:$HOME/.local/bin"' >> ~/.bashrc
+
+# Zsh users
+echo 'export PATH="$PATH:$HOME/.local/bin"' >> ~/.zshrc
+```
+
 ## Configuration
 After installing the binary the only configuration you should do is provide the
 command to use for system clipboard syncing. on mac this would be `pbcopy` and
