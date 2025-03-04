@@ -6,13 +6,23 @@ this readme
 Sync Clipboards between local and remote machines over ssh reverse tunnels
 
 ## Installation (WIP)
+```bash 
+git clone https://github.com/SebastianMusic/nvimClipboardSyncDaemonCpp.git /tmp/nvimClipboardSyncBuild
+git clone https://github.com/microsoft/vcpkg /tmp/nvimClipboardSyncBuild
+/tmp/nvimClipboardSyncBuild/vcpkg/vcpkg install
+mkdir /tmp/nvimClipboardSyncBuild/build
+cd /tmp/nvimClipboardSyncBuild/build
+cmake ..
+make
+```
+
+
 
 ## Configuration
 ```bash
 # Create directory 
 mkdir ~/.config/nvimClipboardSync/
-~/.config/nvimClipboardSync/
-echo 'copyCmd = ""' > config.toml
+echo 'copyCmd = ""' > ~/.config/nvimClipboardSync/config.toml
 ```
 Then open the file and add your clipboard command on make this would be `pbcopy`
 and if you are on wayland it might be `wl-copy`
