@@ -49,6 +49,8 @@ echo 'export PATH="$PATH:$HOME/.local/bin"' >> ~/.zshrc
 Edit the configuration file to specify the command for system clipboard syncing. Common commands are `pbcopy` for macOS and `wl-copy` for Wayland. Ensure the command can handle input piped via stdin (e.g., `echo "text" | yourCopyCommand`).
 
 ```bash
+mkdir -p ~/.config/nvimClipboardSync/config.toml
+echo >> 'copyCmd = ""'
 nvim ~/.config/nvimClipboardSync/config.toml
 ```
 
