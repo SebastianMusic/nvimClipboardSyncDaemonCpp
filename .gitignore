@@ -5,3 +5,4 @@ vendor/
 .cache/
 vcpkg_installed/
 vcpkg/
+Dockerfile
