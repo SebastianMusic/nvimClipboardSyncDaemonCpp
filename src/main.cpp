@@ -1,13 +1,7 @@
-// TODO: Maybe not have a config file on remote machine since we dont need to
-// sync clipboards there or atleast have an option to turn clipboard syncing off
-//
-// TODO: need to improve timer precission more detailed unix time stamps
-//
 // TODO: refactor function names and make it more logical
 //
 // TODO: create a function to create a empty config file if it does not already
 // exist
-//
 
 #include "rapidjson/document.h"
 #include "rapidjson/error/en.h"
@@ -424,9 +418,8 @@ void daemonToDaemonReadCallback(uv_stream_t *stream, ssize_t nread,
   // daemons
   spdlog::info("isLocalMachine is: {}", isLocalMachine);
   if (isLocalMachine == true) {
-    // NOTE: disabled this currently to stop errors but it also means that its
-    // only possible with a maximum of one remote machine instead of multiple
-    // iterateOverStreams(connectedDaemonHandles, buffer, nread);
+    iterateOverStreams(connectedDaemonHandles, buffer, nread,
+                       "connectedDaemonHandles");
     copyToSystemClipboard(copyCmd, buffer, nread);
   }
   // send to all connected neovim instances
